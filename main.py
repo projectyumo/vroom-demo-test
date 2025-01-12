@@ -80,10 +80,8 @@ async def root(request: Request):
 
                 <script>
                     if (window.top === window.self) {
-                        // If the app is not embedded, redirect to Shopify admin
                         window.location.href = "https://admin.shopify.com";
                     } else {
-                        // Initialize App Bridge
                         var config = {{
                             apiKey: '{SHOPIFY_API_KEY}',
                             host: '{host}',
