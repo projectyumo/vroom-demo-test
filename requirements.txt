@@ -4,3 +4,4 @@ pydantic
 ShopifyAPI
 python-dotenv
 httpx
+psycopg2
