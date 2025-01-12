@@ -4,66 +4,58 @@
     <meta charset="utf-8" />
     <title>My Embedded Shopify App</title>
     
-    <!-- Load Shopify App Bridge (version 2) -->
+    <!-- Load Shopify App Bridge (version 2) from a CDN -->
     <script src="https://unpkg.com/@shopify/app-bridge@2"></script>
-    <!-- (Optional) App Bridge utilities for navigation, etc. -->
+    <!-- (Optional) App Bridge utils -->
     <script src="https://unpkg.com/@shopify/app-bridge-utils"></script>
   </head>
   <body>
     <h1>Welcome to My Embedded Shopify App!</h1>
 
-    <!-- A paragraph to show shop info or status -->
     <p id="status"></p>
-
-    <!-- Button that triggers OAuth installation link -->
     <button id="authorizeBtn">Authorize Shop Access</button>
 
     <script>
-      // 1. Parse the 'shop' param from the URL query string.
+      // 1. Parse the 'shop' param from the URL (?shop=myshop.myshopify.com)
       const params = new URLSearchParams(window.location.search);
       const shopOrigin = params.get('shop');
 
-      // 2. Initialize App Bridge if we have a 'shop' param.
-      //    Replace 'YOUR_API_KEY' with your actual Shopify API Key from Partner Dashboard.
+      // 2. Initialize App Bridge if 'shop' is present
+      //    Replace 'YOUR_API_KEY' with your actual Shopify API key (client_id) from Partner Dashboard
       if (shopOrigin) {
         const app = window['app-bridge'].createApp({
           apiKey: 'YOUR_API_KEY',
           shopOrigin: shopOrigin,
-          forceRedirect: true  // ensures top-level redirect if needed
+          forceRedirect: true
         });
 
-        // Display a small status message
+        // Display which shop is loaded
         const statusEl = document.getElementById('status');
         statusEl.innerText = `Shop: ${shopOrigin}`;
 
-        // 3. Attach a click handler to the "Authorize Shop Access" button
+        // Set up the App Bridge "Redirect" action
+        const Redirect = window['app-bridge-utils'].Redirect;
+        const redirect = Redirect.create(app);
+
+        // 3. When the user clicks "Authorize Shop Access", do a top-level redirect
         const authorizeBtn = document.getElementById('authorizeBtn');
         authorizeBtn.addEventListener('click', () => {
-          // Build the OAuth authorize URL
-          // scope can be "read_products", "write_products", etc. 
-          // redirect_uri must match what's in your Partner Dashboard's Allowed redirection URLs.
+          // Build the OAuth link:
           const scope = "read_products";
           const redirectUri = "https://yourapp.com/auth/callback"; 
-          //   ^^^^^ Replace with your actual callback route
-          
-          // Full authorize URL:
-          // https://{shop}.myshopify.com/admin/oauth/authorize
-          //   ?client_id=YOUR_API_KEY
-          //   &scope=...
-          //   &redirect_uri=...
-          const authorizeUrl = `https://${shopOrigin}/admin/oauth/authorize` +
-            `?client_id=YOUR_API_KEY` +
-            `&scope=${scope}` +
-            `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+          const authorizeUrl = `https://${shopOrigin}/admin/oauth/authorize`
+            + `?client_id=YOUR_API_KEY`
+            + `&scope=${scope}`
+            + `&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
-          // Redirect the browser to start the OAuth install flow
-          window.location.href = authorizeUrl;
+          // Use App Bridge to redirect top-level
+          redirect.dispatch(Redirect.Action.REMOTE, authorizeUrl);
         });
 
       } else {
-        // No shop param found => show a quick message
+        // If no 'shop' param, show an error message
         document.getElementById('status').innerText =
-          'No shop parameter found in URL. Please include ?shop=my-shop.myshopify.com';
+          'No shop parameter found. Please include ?shop=myshop.myshopify.com.';
       }
     </script>
   </body>
