@@ -191,7 +191,7 @@ async def callback(request: Request):
         store_access_token(shop, access_token)
         print("Access token stored successfully")
 
-        # Now we can try to fetch products
+        # Now fetch products
         print("Starting product fetch...")
         try:
             products = await fetch_all_products(shop, access_token)
@@ -217,12 +217,17 @@ async def callback(request: Request):
             print(f"Successfully stored all products for {shop}")
         except Exception as e:
             print(f"Error during product ingestion: {str(e)}")
-            # Continue with redirect even if product ingestion fails
-            # We can try to fetch products later
 
-        # Redirect back to Shopify admin
-        admin_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
-        return RedirectResponse(url=admin_url, status_code=303)
+        # Redirect to the specific app URL in Shopify admin
+        redirect_url = f"https://{shop}/admin/apps"
+        print(f"Redirecting to: {redirect_url}")
+        response = RedirectResponse(url=redirect_url)
+        
+        # Set necessary headers to avoid framing issues
+        response.headers['Content-Security-Policy'] = "frame-ancestors 'none';"
+        response.headers['X-Frame-Options'] = 'DENY'
+        
+        return response
 
     except Exception as e:
         print(f"Error in callback: {str(e)}")
