@@ -5,6 +5,12 @@ import random
 import os
 from typing import List, Dict, Any
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SHOP_URL = os.getenv('SHOP_URL')
+ACCESS_TOKEN = os.getenv('SHOPIFY_ACCESS_TOKEN')
 
 app = FastAPI()
 
