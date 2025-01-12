@@ -1,16 +1,17 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-import shopify
-import random
 import os
-from typing import List, Dict, Any
-from pydantic import BaseModel
-from dotenv import load_dotenv
+import httpx
+import random
 
-load_dotenv()
+from fastapi import FastAPI, Request
+from dotenv import load_dotenv, find_dotenv
 
-SHOP_URL = os.getenv('SHOP_URL')
-ACCESS_TOKEN = os.getenv('SHOPIFY_ACCESS_TOKEN')
+from db import init_db, store_access_token, get_access_token_for_shop
+
+load_dotenv(find_dotenv())
+
+# Read your Shopify API creds from environment
+SHOPIFY_API_KEY = os.environ.get("SHOPIFY_API_KEY")
+SHOPIFY_API_SECRET = os.environ.get("SHOPIFY_API_SECRET")
 
 app = FastAPI()
 
@@ -23,78 +24,110 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Shopify API configuration
-SHOP_URL = os.getenv('SHOP_URL', 'your-store.myshopify.com')
-ACCESS_TOKEN = os.getenv('SHOPIFY_ACCESS_TOKEN', 'your-access-token')
+@app.on_event("startup")
+def on_startup():
+    # Initialize DB table on server start
+    init_db()
 
-def init_shopify():
-    shop_url = f"https://{ACCESS_TOKEN}:@{SHOP_URL}/admin/api/2024-01"
-    shopify.ShopifyResource.set_site(shop_url)
 
-class ProductResponse(BaseModel):
-    recommendations: List[Dict[str, Any]]
+########################################
+# 1) OAuth Callback
+########################################
+@app.get("/auth/callback")
+def auth_callback(shop: str, code: str):
+    """
+    Shopify redirects here after the merchant approves the app.
+    We exchange the 'code' for an access token, store it in Postgres.
+    """
+    # 1. Request the permanent access token using the code & your API secrets
+    token_url = f"https://{shop}/admin/oauth/access_token"
+    payload = {
+        "client_id": SHOPIFY_API_KEY,
+        "client_secret": SHOPIFY_API_SECRET,
+        "code": code
+    }
 
-@app.get("/random-products", response_model=ProductResponse)
-async def random_products(request: Request, limit: int = 4):
-    try:
-        init_shopify()
-        
-        # Fetch all published products
-        products = shopify.Product.find(
-            limit=250,  # Adjust based on your store size
-            published_status='published'
-        )
-        
-        if not products:
-            return {"recommendations": []}
+    # You can use 'requests' or 'httpx'
+    resp = httpx.post(token_url, data=payload)
+    if resp.status_code != 200:
+        return {"error": f"Failed to get token from {shop}: {resp.text}"}
+    
+    token_data = resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return {"error": "No access token returned in response."}
+    
+    # 2. Store the token in the DB
+    store_access_token(shop, access_token)
 
-        # Filter for products with variants and images
-        valid_products = [
-            product for product in products 
-            if product.variants and product.images
-        ]
+    # 3. Return or redirect merchant to your app's UI
+    return {"message": f"Shop {shop} installed. Token stored."}
 
-        # Select random products
-        selected_count = min(limit, len(valid_products))
-        random_products = random.sample(valid_products, selected_count)
 
-        # Format the response
-        recommendations = []
-        for product in random_products:
-            # Get the first available variant
-            variant = product.variants[0]
-            # Get the first image
-            image = product.images[0] if product.images else None
-            
-            recommendations.append({
-                "title": product.title,
-                "featuredImage": image.src if image else "",
-                "price": float(variant.price) if variant else 0.0,
-                "variantId": str(variant.id) if variant else "",
-                "onlineStoreUrl": f"/products/{product.handle}",
-                "compareAtPrice": float(variant.compare_at_price) if variant and variant.compare_at_price else None
-            })
+########################################
+# 2) App Proxy Endpoint: /random-products
+########################################
+@app.get("/random-products")
+async def random_products(request: Request):
+    """
+    Called by Shopify's app proxy at:
+    https://{shop}.myshopify.com/apps/random-products
+    => forwards to:
+    https://yourapp.up.railway.app/random-products?shop={shop}
+    """
+    shop = request.query_params.get("shop")
+    if not shop:
+        return {"error": "No 'shop' query param provided"}
 
-        return {"recommendations": recommendations}
+    access_token = get_access_token_for_shop(shop)
+    if not access_token:
+        return {"error": f"No access token found for shop {shop}."}
+    
+    # Call the Shopify Admin API to fetch products
+    admin_api_url = f"https://{shop}/admin/api/2023-07/products.json"
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json"
+    }
+    async with httpx.AsyncClient() as client:
+        r = await client.get(admin_api_url, headers=headers)
+        if r.status_code != 200:
+            return {"error": f"Failed to fetch products: {r.text}"}
+        data = r.json()
 
-    except Exception as e:
-        print(f"Error fetching random products: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to fetch random products"
-        )
+    products = data.get("products", [])
+    if not products:
+        return {"recommendations": []}
+    
+    # Randomly pick up to 4
+    pick_count = min(4, len(products))
+    chosen = random.sample(products, pick_count)
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
+    # Transform them for the storefront JS
+    recommendations = []
+    for p in chosen:
+        images = p.get("images", [])
+        variants = p.get("variants", [])
+        handle = p.get("handle", "")
 
+        image_url = images[0]["src"] if images else "https://via.placeholder.com/400"
+        first_variant = variants[0] if variants else {}
+        variant_id = first_variant.get("id", "")
+        price = first_variant.get("price", "0.00")
+
+        recommendations.append({
+            "title": p.get("title", "Untitled"),
+            "featuredImage": image_url,
+            "price": f"${price}",
+            "variantId": variant_id,
+            "onlineStoreUrl": f"/products/{handle}"
+        })
+    
+    return {"recommendations": recommendations}
+
+
+# Local dev: uvicorn main:app --reload --port 8000
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True,
-        log_level="info"
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
