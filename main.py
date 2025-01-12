@@ -54,76 +54,65 @@ async def root(request: Request):
 
 @app.get("/install")
 async def install(request: Request):
-    """Start OAuth process"""
+    """
+    Step 1: App installation begins here.
+    The merchant clicks install, and we redirect them to Shopify's OAuth screen.
+    """
     shop = request.query_params.get("shop")
     if not shop:
-        return JSONResponse({"error": "Missing shop parameter"})
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-    # Construct OAuth URL
-    scopes = "read_products,write_products"  # Add scopes you need
-    redirect_uri = f"{APP_URL}/callback"
+    # Construct the authorization URL with required scopes
+    scopes = "read_products,write_products"  # Explicitly request product access
+    redirect_uri = f"{os.environ.get('APP_URL')}/callback"
     
-    auth_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
+    install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
         'client_id': SHOPIFY_API_KEY,
         'scope': scopes,
-        'redirect_uri': redirect_uri
+        'redirect_uri': redirect_uri,
     })
     
-    return RedirectResponse(url=auth_url)
+    print(f"Redirecting to Shopify OAuth: {install_url}")
+    return RedirectResponse(url=install_url)
 
 async def fetch_all_products(shop: str, access_token: str) -> list:
-    """
-    Fetch all products from a shop using pagination
-    """
-    print(f"Fetching products for shop: {shop}")
+    """Fetch all products from a shop using pagination"""
     all_products = []
+    page_info = None
     
-    try:
-        async with httpx.AsyncClient() as client:
-            # Start with the first page
+    async with httpx.AsyncClient() as client:
+        while True:
             url = f"https://{shop}/admin/api/2024-01/products.json?limit=250"
+            if page_info:
+                url += f"&page_info={page_info}"
+                
             headers = {
                 "X-Shopify-Access-Token": access_token,
                 "Content-Type": "application/json"
             }
             
-            while url:
-                print(f"Fetching page: {url}")
-                response = await client.get(url, headers=headers)
+            print(f"Fetching products page from {url}")
+            response = await client.get(url, headers=headers)
+            
+            if response.status_code != 200:
+                error_msg = f"Failed to fetch products: {response.text}"
+                print(error_msg)
+                raise HTTPException(status_code=response.status_code, detail=error_msg)
+            
+            data = response.json()
+            page_products = data.get("products", [])
+            all_products.extend(page_products)
+            print(f"Fetched {len(page_products)} products on this page")
+            
+            # Check for next page
+            link_header = response.headers.get("Link", "")
+            if 'rel="next"' not in link_header:
+                break
                 
-                if response.status_code != 200:
-                    print(f"Error response: {response.text}")
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Failed to fetch products: {response.text}"
-                    )
-                
-                data = response.json()
-                page_products = data.get("products", [])
-                all_products.extend(page_products)
-                print(f"Fetched {len(page_products)} products on this page")
-                
-                # Check for next page in Link header
-                link_header = response.headers.get("Link", "")
-                url = None
-                
-                if 'rel="next"' in link_header:
-                    # Extract next URL from Link header
-                    next_link = [l for l in link_header.split(",") if 'rel="next"' in l]
-                    if next_link:
-                        url = next_link[0].split(";")[0].strip(" <>")
-                        print("Found next page")
-                
-                if not url:
-                    print("No more pages to fetch")
-                    break
-        
-        print(f"Total products fetched: {len(all_products)}")
-        return all_products
-        
-    except Exception as e:
-        print(f"Error in fetch_all_products: {str(e)}")
-        raise
+            # Extract page_info for next page
+            page_info = link_header.split("page_info=")[1].split(">")[0]
+    
+    return all_products
 
 async def ingest_products(shop: str, access_token: str):
     """
@@ -158,22 +147,41 @@ async def ingest_products(shop: str, access_token: str):
         print(f"Error ingesting products for {shop}: {str(e)}")
         raise
 
+@app.get("/install")
+async def install(request: Request):
+    """
+    Step 1: App installation begins here.
+    The merchant clicks install, and we redirect them to Shopify's OAuth screen.
+    """
+    shop = request.query_params.get("shop")
+    if not shop:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    # Construct the authorization URL with required scopes
+    scopes = "read_products,write_products"  # Explicitly request product access
+    redirect_uri = f"{os.environ.get('APP_URL')}/callback"
+    
+    install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
+        'client_id': SHOPIFY_API_KEY,
+        'scope': scopes,
+        'redirect_uri': redirect_uri,
+    })
+    
+    print(f"Redirecting to Shopify OAuth: {install_url}")
+    return RedirectResponse(url=install_url)
+
 @app.get("/callback")
 async def callback(request: Request):
     """Handle OAuth callback and trigger product ingestion"""
-    print("Starting OAuth callback process...")
-    
+    print("Starting OAuth callback...")
     shop = request.query_params.get("shop")
     code = request.query_params.get("code")
     
-    if not shop or not code:
-        print("Missing required parameters")
-        return JSONResponse({"error": "Missing required parameters"})
-    
-    print(f"Processing installation for shop: {shop}")
-    
+    if not all([shop, code]):
+        raise HTTPException(status_code=400, detail="Missing required parameters")
+
     try:
-        # Exchange code for access token
+        # First, get and store the access token
         print("Getting access token...")
         access_token = await get_access_token(shop, code)
         print("Successfully got access token")
@@ -181,45 +189,45 @@ async def callback(request: Request):
         # Store the access token
         print("Storing access token...")
         store_access_token(shop, access_token)
-        print("Access token stored")
-        
-        # Fetch and store products
-        print("Starting product ingestion...")
-        products = await fetch_all_products(shop, access_token)
-        print(f"Fetched {len(products)} products")
-        
-        # Store each product
-        stored_count = 0
-        for product in products:
-            processed_product = {
-                "shop": shop,
-                "product_id": product.get("id"),
-                "title": product.get("title"),
-                "handle": product.get("handle"),
-                "created_at": product.get("created_at"),
-                "updated_at": product.get("updated_at"),
-                "published_at": product.get("published_at"),
-                "status": product.get("status"),
-                "variants": product.get("variants", []),
-                "images": product.get("images", []),
-                "options": product.get("options", []),
-                "tags": product.get("tags")
-            }
-            
-            await store_product(shop, processed_product)
-            stored_count += 1
-        
-        print(f"Successfully stored {stored_count} products")
-        
+        print("Access token stored successfully")
+
+        # Now we can try to fetch products
+        print("Starting product fetch...")
+        try:
+            products = await fetch_all_products(shop, access_token)
+            print(f"Successfully fetched {len(products)} products")
+
+            # Store products in database
+            for product in products:
+                processed_product = {
+                    "shop": shop,
+                    "product_id": product.get("id"),
+                    "title": product.get("title"),
+                    "handle": product.get("handle"),
+                    "created_at": product.get("created_at"),
+                    "updated_at": product.get("updated_at"),
+                    "published_at": product.get("published_at"),
+                    "status": product.get("status"),
+                    "variants": product.get("variants", []),
+                    "images": product.get("images", []),
+                    "options": product.get("options", []),
+                    "tags": product.get("tags")
+                }
+                await store_product(shop, processed_product)
+            print(f"Successfully stored all products for {shop}")
+        except Exception as e:
+            print(f"Error during product ingestion: {str(e)}")
+            # Continue with redirect even if product ingestion fails
+            # We can try to fetch products later
+
         # Redirect back to Shopify admin
         admin_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
-        print(f"Redirecting to: {admin_url}")
         return RedirectResponse(url=admin_url, status_code=303)
-        
-    except Exception as e:
-        print(f"Error during callback processing: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
+    except Exception as e:
+        print(f"Error in callback: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
 # Add an endpoint to manually trigger re-ingestion
 @app.post("/api/refresh-products")
 async def refresh_products(request: Request):
