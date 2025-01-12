@@ -19,9 +19,9 @@ app = FastAPI()
 # Basic CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://admin.shopify.com", "https://partners.shopify.com"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -30,24 +30,46 @@ def on_startup():
     print("Initializing database...")
     init_db()
 
+@app.get("/")
+async def root(request: Request):
+    """Initial entry point"""
+    shop = request.query_params.get("shop")
+    
+    if not shop:
+        return JSONResponse({"error": "Missing shop parameter"})
+
+    # Check if we have an access token
+    access_token = get_access_token_for_shop(shop)
+    
+    # If no access token, start oauth flow
+    if not access_token:
+        return RedirectResponse(url=f"/install?shop={shop}")
+
+    # Return success response
+    return JSONResponse({
+        "message": "App is installed and authorized",
+        "shop": shop
+    })
+
+# Update install endpoint to use /callback
 @app.get("/install")
 async def install(request: Request):
-    """
-    Initial installation endpoint.
-    Store owners are directed here when they install your app from their Shopify admin.
-    """
+    """Handle app installation"""
     shop = request.query_params.get("shop")
     if not shop:
         return JSONResponse({"error": "Missing shop parameter"})
 
-    # Redirect to Shopify's OAuth page
-    auth_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
+    # Construct the authorization URL
+    scopes = "read_products,write_products"  # Add more scopes as needed
+    redirect_uri = f"{APP_URL}/callback"
+    
+    install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
         'client_id': SHOPIFY_API_KEY,
-        'scope': 'read_products,write_products',  # Add more scopes as needed
-        'redirect_uri': f"{APP_URL}/callback"
+        'scope': scopes,
+        'redirect_uri': redirect_uri,
     })
     
-    return RedirectResponse(url=auth_url)
+    return RedirectResponse(url=install_url)
 
 @app.get("/callback")
 async def callback(request: Request):
