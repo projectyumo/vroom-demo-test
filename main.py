@@ -3,6 +3,7 @@ import httpx
 import random
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 
 from db import init_db, store_access_token, get_access_token_for_shop
