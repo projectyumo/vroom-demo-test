@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 from db import init_db, store_access_token, get_access_token_for_shop, store_product, get_shop_products
 from urllib.parse import urlencode
+from fastapi import BackgroundTasks
 
 load_dotenv(find_dotenv())
 
@@ -170,9 +171,38 @@ async def install(request: Request):
     print(f"Redirecting to Shopify OAuth: {install_url}")
     return RedirectResponse(url=install_url)
 
+async def background_fetch_products(shop: str, access_token: str):
+    """Background task to fetch and store products"""
+    print(f"Starting background product fetch for {shop}...")
+    try:
+        products = await fetch_all_products(shop, access_token)
+        print(f"Successfully fetched {len(products)} products")
+
+        # Store products in database
+        for product in products:
+            processed_product = {
+                "shop": shop,
+                "product_id": product.get("id"),
+                "title": product.get("title"),
+                "handle": product.get("handle"),
+                "created_at": product.get("created_at"),
+                "updated_at": product.get("updated_at"),
+                "published_at": product.get("published_at"),
+                "status": product.get("status"),
+                "variants": product.get("variants", []),
+                "images": product.get("images", []),
+                "options": product.get("options", []),
+                "tags": product.get("tags")
+            }
+            await store_product(shop, processed_product)
+        print(f"Successfully stored all products for {shop}")
+    except Exception as e:
+        print(f"Error in background product fetch: {str(e)}")
+
+        
 @app.get("/callback")
-async def callback(request: Request):
-    """Handle OAuth callback and trigger product ingestion"""
+async def callback(request: Request, background_tasks: BackgroundTasks):
+    """Handle OAuth callback and trigger background product ingestion"""
     print("Starting OAuth callback...")
     shop = request.query_params.get("shop")
     code = request.query_params.get("code")
@@ -191,43 +221,14 @@ async def callback(request: Request):
         store_access_token(shop, access_token)
         print("Access token stored successfully")
 
-        # Now fetch products
-        print("Starting product fetch...")
-        try:
-            products = await fetch_all_products(shop, access_token)
-            print(f"Successfully fetched {len(products)} products")
+        # Add product fetch to background tasks
+        background_tasks.add_task(background_fetch_products, shop, access_token)
+        print("Product fetch scheduled in background")
 
-            # Store products in database
-            for product in products:
-                processed_product = {
-                    "shop": shop,
-                    "product_id": product.get("id"),
-                    "title": product.get("title"),
-                    "handle": product.get("handle"),
-                    "created_at": product.get("created_at"),
-                    "updated_at": product.get("updated_at"),
-                    "published_at": product.get("published_at"),
-                    "status": product.get("status"),
-                    "variants": product.get("variants", []),
-                    "images": product.get("images", []),
-                    "options": product.get("options", []),
-                    "tags": product.get("tags")
-                }
-                await store_product(shop, processed_product)
-            print(f"Successfully stored all products for {shop}")
-        except Exception as e:
-            print(f"Error during product ingestion: {str(e)}")
-
-        # Redirect to the specific app URL in Shopify admin
+        # Redirect to the app page
         redirect_url = f"https://{shop}/admin/apps"
         print(f"Redirecting to: {redirect_url}")
-        response = RedirectResponse(url=redirect_url)
-        
-        # Set necessary headers to avoid framing issues
-        response.headers['Content-Security-Policy'] = "frame-ancestors 'none';"
-        response.headers['X-Frame-Options'] = 'DENY'
-        
-        return response
+        return RedirectResponse(url=redirect_url)
 
     except Exception as e:
         print(f"Error in callback: {str(e)}")
@@ -311,6 +312,28 @@ async def get_products(request: Request):
             
         return response.json()
 
+# Add an endpoint to check ingestion status (optional)
+@app.get("/api/ingestion-status")
+async def check_ingestion_status(request: Request):
+    """Check product ingestion status for a shop"""
+    shop = request.query_params.get("shop")
+    if not shop:
+        return JSONResponse({"error": "Missing shop parameter"})
+    
+    try:
+        products = await get_shop_products(shop)
+        return JSONResponse({
+            "status": "success",
+            "product_count": len(products),
+            "shop": shop
+        })
+    except Exception as e:
+        return JSONResponse({
+            "status": "error",
+            "message": str(e),
+            "shop": shop
+        })
+    
 @app.get("/random-products")
 async def random_products(request: Request):
     """Get random products from our local database"""
