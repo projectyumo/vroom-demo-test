@@ -2,7 +2,7 @@ import os
 import random
 import httpx
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 from db import init_db, store_access_token, get_access_token_for_shop
@@ -19,9 +19,9 @@ app = FastAPI()
 # Basic CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://admin.shopify.com", "https://partners.shopify.com"],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -32,72 +32,72 @@ def on_startup():
 
 @app.get("/")
 async def root(request: Request):
-    """Initial entry point for the app"""
-    query_params = dict(request.query_params)
-    shop = query_params.get("shop")
+    """Initial entry point"""
+    shop = request.query_params.get("shop")
     
     if not shop:
         return JSONResponse({"error": "Missing shop parameter"})
 
-    # Check if shop is installed/authenticated
+    # Check if we have an access token
     access_token = get_access_token_for_shop(shop)
     
+    # If no access token, redirect to install
     if not access_token:
-        # Store isn't installed yet, redirect to install
-        return RedirectResponse(url=f"/install?shop={shop}")
-        
-    # Store is installed, return simple HTML
-    return HTMLResponse(content=f"""
+        return RedirectResponse(f"/install?shop={shop}")
+
+    # If we have an access token, return simple dashboard
+    return HTMLResponse(content="""
         <!DOCTYPE html>
         <html>
             <head>
                 <title>App Dashboard</title>
             </head>
             <body>
-                <h1>Welcome to your app!</h1>
-                <p>Store: {shop}</p>
+                <h1>Your App Dashboard</h1>
+                <p>Successfully authenticated!</p>
             </body>
         </html>
     """)
 
 @app.get("/install")
 async def install(request: Request):
-    """Initiate the OAuth process"""
+    """Start OAuth process"""
     shop = request.query_params.get("shop")
     if not shop:
         return JSONResponse({"error": "Missing shop parameter"})
 
-    # Construct Shopify authorization URL
-    scopes = "read_products,write_products"  # Add more scopes as needed
+    # Construct OAuth URL
+    scopes = "read_products,write_products"  # Add scopes you need
+    redirect_uri = f"{APP_URL}/callback"
     
-    install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
+    auth_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
         'client_id': SHOPIFY_API_KEY,
         'scope': scopes,
-        'redirect_uri': f"{APP_URL}/callback",
+        'redirect_uri': redirect_uri
     })
     
-    return RedirectResponse(url=install_url)
+    return RedirectResponse(url=auth_url)
 
 @app.get("/callback")
 async def callback(request: Request):
-    """
-    OAuth callback endpoint.
-    Shopify redirects here after store owner approves installation.
-    """
+    """Handle OAuth callback"""
     shop = request.query_params.get("shop")
     code = request.query_params.get("code")
     
-    if not all([shop, code]):
+    if not shop or not code:
         return JSONResponse({"error": "Missing required parameters"})
-
-    # Exchange temporary code for permanent access token
+    
+    # Exchange code for access token
     access_token = await get_access_token(shop, code)
     
     # Store the access token
     store_access_token(shop, access_token)
     
-    # Redirect back to Shopify admin
-    return RedirectResponse(url=f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}")
+    # Important: Redirect to Shopify admin properly
+    return RedirectResponse(
+        url=f"https://{shop}/admin",
+        status_code=302
+    )
 
 async def get_access_token(shop: str, code: str) -> str:
     """Exchange temporary code for permanent access token"""
