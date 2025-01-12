@@ -29,50 +29,10 @@ def on_startup():
     init_db()
 
 @app.get("/", response_class=HTMLResponse)
-def index(shop: str = None):
-    """
-    This route returns a simple HTML page.
-    If the user includes ?shop=xxx in the query, we show an "Authorize" button
-    that redirects them to Shopify's OAuth installation link.
-    """
-    if not shop:
-        # If no ?shop= param is provided, just show a generic welcome message
-        return """
-        <html>
-            <body>
-                <h1>Welcome to my Shopify App!</h1>
-                <p>Please include your shop domain in the URL, e.g.:
-                   <code>?shop=my-test-shop.myshopify.com</code></p>
-            </body>
-        </html>
-        """
-
-    # If the shop param is present, build the OAuth authorization link
-    # Example scopes = "read_products"
-    # Make sure the redirect_uri matches your actual callback route & Partner Dashboard settings.
-    scopes = "read_products"
-    redirect_uri = "https://yourapp.up.railway.app/auth/callback"
-
-    authorize_url = (
-        f"https://{shop}/admin/oauth/authorize"
-        f"?client_id={SHOPIFY_API_KEY}"
-        f"&scope={scopes}"
-        f"&redirect_uri={redirect_uri}"
-    )
-
-    # Return a simple HTML page with a button to start OAuth for that shop.
-    html_content = f"""
-    <html>
-        <body>
-            <h1>Welcome to My Shopify App</h1>
-            <p>Shop: <strong>{shop}</strong></p>
-            <p>Click the button below to authorize access for this shop.</p>
-            <a href="{authorize_url}">
-                <button>Authorize Shop Access</button>
-            </a>
-        </body>
-    </html>
-    """
+def index(request: Request):
+    # Possibly read the file from disk, or store it as a string in code
+    with open("templates/index.html", "r") as f:
+        html_content = f.read()
     return html_content
 
 

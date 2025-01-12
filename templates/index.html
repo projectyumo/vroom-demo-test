@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <!-- Load the App Bridge library (version 2.x) -->
+    <script src="https://unpkg.com/@shopify/app-bridge@2"></script>
+
+    <!-- Optionally, load App Bridge utilities (e.g. Redirect) -->
+    <script src="https://unpkg.com/@shopify/app-bridge-utils"></script>
+
+    <meta charset="utf-8" />
+    <title>My Embedded Shopify App</title>
+  </head>
+  <body>
+    <h1>Hello from my embedded Shopify app!</h1>
+    <p id="status"></p>
+
+    <script>
+      // 1. Grab the 'shop' parameter from the URL. Shopify includes ?shop=xxx when loading your app.
+      //    For example, if your app is loaded at:
+      //    https://yourapp.com/?shop=some-shop.myshopify.com&host=...
+      const urlParams = new URLSearchParams(window.location.search);
+      const shopOrigin = urlParams.get('shop');
+      
+      // 2. Initialize App Bridge
+      //    Replace 'YOUR_API_KEY' with your actual Shopify API key (from Partner Dashboard).
+      //    Setting forceRedirect=true ensures the app loads at top-level if embedded session fails.
+      const app = window['app-bridge'].createApp({
+        apiKey: 'YOUR_API_KEY',
+        shopOrigin: shopOrigin,
+        forceRedirect: true
+      });
+
+      // 3. (Optional) Use App Bridge utilities
+      //    For example, the 'Redirect' action:
+      const createApp = window['app-bridge'].createApp;
+      const Redirect = window['app-bridge-utils'].Redirect;
+
+      // 4. Simple example: show a status
+      const statusEl = document.getElementById('status');
+      if (shopOrigin) {
+        statusEl.innerText = `App Bridge initialized for: ${shopOrigin}`;
+      } else {
+        statusEl.innerText = 'No shop parameter found in query string.';
+      }
+
+      // 5. (Optional) If you want to redirect inside the Shopify admin:
+      // const redirect = Redirect.create(app);
+      // redirect.dispatch(
+      //   Redirect.Action.ADMIN_PATH,
+      //   '/products'
+      // );
+    </script>
+  </body>
+</html>
+
