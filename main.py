@@ -2,8 +2,14 @@ import os
 import random
 import httpx
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse
+import hmac
+import json
+import hashlib
+import base64
+from urllib.parse import urlencode, quote
+
+from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 
@@ -30,75 +36,147 @@ def on_startup():
     init_db()
 
 
-# ----------------------------------------
-# 1) Root Page
-# ----------------------------------------
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request, shop: str = None):
+@app.get("/install")
+async def install(request: Request):
     """
-    If 'shop' is not provided in the query string, serve a static index.html.
-    If 'shop' is provided, show a button to initiate the Shopify OAuth flow.
+    Step 1: App installation begins here.
+    The merchant clicks install, and we redirect them to Shopify's OAuth screen.
     """
+    shop = request.query_params.get("shop")
     if not shop:
-        # No ?shop= param --> return your static HTML page
-        with open("templates/index.html", "r") as f:
-            html_content = f.read()
-        return html_content
-    else:
-        # If ?shop=... is present, build an OAuth link
-        # Example scope for demonstration:
-        scopes = "read_products"
-        # Must match your Partner Dashboard "Allowed redirection URL(s)"
-        redirect_uri = "https://vroom-demo-test-production.up.railway.app/auth/callback"
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-        authorize_url = (
-            f"https://{shop}/admin/oauth/authorize"
-            f"?client_id={SHOPIFY_API_KEY}"
-            f"&scope={scopes}"
-            f"&redirect_uri={redirect_uri}"
-        )
-
-        # Return a small HTML snippet with a button to authorize
-        html_content = f"""
-        <html>
-            <body>
-                <h1>Authorize Shop Access</h1>
-                <p>Shop domain: <strong>{shop}</strong></p>
-                <a href="{authorize_url}">
-                    <button>Authorize Shop Access</button>
-                </a>
-            </body>
-        </html>
-        """
-        return html_content
-
-
-# ----------------------------------------
-# 2) OAuth Callback
-# ----------------------------------------
-@app.get("/auth/callback")
-def auth_callback(shop: str, code: str):
-    """
-    After the merchant approves, Shopify calls this endpoint with ?shop=...&code=...
-    We exchange 'code' for an access token and store it in the DB.
-    """
-    token_url = f"https://{shop}/admin/oauth/access_token"
-    payload = {
-        "client_id": SHOPIFY_API_KEY,
-        "client_secret": SHOPIFY_API_SECRET,
-        "code": code
-    }
-    resp = httpx.post(token_url, data=payload)
-    if resp.status_code != 200:
-        return {"error": f"Failed to get token from {shop}: {resp.text}"}
+    # Construct the authorization URL
+    scopes = "read_products"  # Add more scopes as needed
+    redirect_uri = f"{os.environ.get('APP_URL')}/oauth/callback"
+    nonce = os.urandom(16).hex()
     
-    token_data = resp.json()
-    access_token = token_data.get("access_token")
-    if not access_token:
-        return {"error": "No access token returned in response."}
+    # Store nonce in your database associated with the shop
     
+    install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
+        'client_id': SHOPIFY_API_KEY,
+        'scope': scopes,
+        'redirect_uri': redirect_uri,
+        'state': nonce,
+        'grant_options[]': 'per-user'  # Optional: Remove if you don't need offline access
+    })
+    
+    return RedirectResponse(url=install_url)
+
+@app.get("/oauth/callback")
+async def oauth_callback(request: Request):
+    """
+    Step 2: Handle OAuth callback from Shopify
+    """
+    # Get query parameters
+    shop = request.query_params.get("shop")
+    code = request.query_params.get("code")
+    state = request.query_params.get("hmac")
+    
+    if not all([shop, code]):
+        raise HTTPException(status_code=400, detail="Missing required parameters")
+
+    # Verify the request is authentic
+    if not verify_hmac(dict(request.query_params)):
+        raise HTTPException(status_code=400, detail="Invalid HMAC")
+
+    # Exchange temporary code for a permanent access token
+    access_token = await get_access_token(shop, code)
+    
+    # Store the access token securely
     store_access_token(shop, access_token)
-    return {"message": f"Shop {shop} installed. Token stored."}
+    
+    # Redirect to app home or configuration page
+    app_home_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
+    return RedirectResponse(url=app_home_url)
+
+async def get_access_token(shop: str, code: str) -> str:
+    """
+    Exchange temporary code for a permanent access token
+    """
+    url = f"https://{shop}/admin/oauth/access_token"
+    payload = {
+        'client_id': SHOPIFY_API_KEY,
+        'client_secret': SHOPIFY_API_SECRET,
+        'code': code
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to get access token: {response.text}"
+            )
+        
+        data = response.json()
+        return data.get('access_token')
+
+def verify_hmac(params: dict) -> bool:
+    """
+    Verify that the request came from Shopify
+    """
+    # Remove hmac from params if it exists
+    hmac_value = params.pop('hmac', None)
+    if not hmac_value:
+        return False
+    
+    # Sort params and convert to query string
+    sorted_params = []
+    for key in sorted(params.keys()):
+        # Replace all instances of '&' and '%' with their encoded versions
+        key = str(key)
+        value = str(params[key])
+        sorted_params.append(f"{key}={value}")
+    query = "&".join(sorted_params)
+    
+    # Calculate hmac using app secret
+    digest = hmac.new(
+        SHOPIFY_API_SECRET.encode('utf-8'),
+        query.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(digest, hmac_value)
+
+# Optional: Middleware to verify app proxy requests
+@app.middleware("http")
+async def verify_app_proxy_request(request: Request, call_next):
+    """
+    Verify that app proxy requests are authentic
+    """
+    if request.url.path == "/random-products":  # Your app proxy path
+        query_dict = dict(request.query_params)
+        
+        # Get the signature and remove it from params
+        signature = query_dict.pop("signature", None)
+        timestamp = query_dict.get("timestamp", None)
+        
+        if not all([signature, timestamp]):
+            raise HTTPException(status_code=400, detail="Missing signature or timestamp")
+        
+        # Sort remaining params alphabetically
+        sorted_params = []
+        for key in sorted(query_dict.keys()):
+            sorted_params.append(f"{key}={query_dict[key]}")
+        
+        # Join all params with '&'
+        query_string = "&".join(sorted_params)
+        
+        # Calculate HMAC
+        computed_signature = hmac.new(
+            SHOPIFY_API_SECRET.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Compare signatures
+        if not hmac.compare_digest(computed_signature, signature):
+            raise HTTPException(status_code=400, detail="Invalid signature")
+    
+    response = await call_next(request)
+    return response
 
 
 # ----------------------------------------
