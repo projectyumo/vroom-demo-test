@@ -75,41 +75,55 @@ async def fetch_all_products(shop: str, access_token: str) -> list:
     """
     Fetch all products from a shop using pagination
     """
-    products = []
-    page_info = None
+    print(f"Fetching products for shop: {shop}")
+    all_products = []
     
-    async with httpx.AsyncClient() as client:
-        while True:
-            # Construct URL with pagination
+    try:
+        async with httpx.AsyncClient() as client:
+            # Start with the first page
             url = f"https://{shop}/admin/api/2024-01/products.json?limit=250"
-            if page_info:
-                url += f"&page_info={page_info}"
-            
             headers = {
                 "X-Shopify-Access-Token": access_token,
                 "Content-Type": "application/json"
             }
             
-            response = await client.get(url, headers=headers)
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Failed to fetch products: {response.text}"
-                )
-            
-            data = response.json()
-            products.extend(data.get("products", []))
-            
-            # Check for pagination headers
-            link_header = response.headers.get("Link", "")
-            if 'rel="next"' in link_header:
-                # Extract page_info from Link header
-                page_info = link_header.split("page_info=")[1].split(">")[0]
-            else:
-                break
-    
-    return products
+            while url:
+                print(f"Fetching page: {url}")
+                response = await client.get(url, headers=headers)
+                
+                if response.status_code != 200:
+                    print(f"Error response: {response.text}")
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Failed to fetch products: {response.text}"
+                    )
+                
+                data = response.json()
+                page_products = data.get("products", [])
+                all_products.extend(page_products)
+                print(f"Fetched {len(page_products)} products on this page")
+                
+                # Check for next page in Link header
+                link_header = response.headers.get("Link", "")
+                url = None
+                
+                if 'rel="next"' in link_header:
+                    # Extract next URL from Link header
+                    next_link = [l for l in link_header.split(",") if 'rel="next"' in l]
+                    if next_link:
+                        url = next_link[0].split(";")[0].strip(" <>")
+                        print("Found next page")
+                
+                if not url:
+                    print("No more pages to fetch")
+                    break
+        
+        print(f"Total products fetched: {len(all_products)}")
+        return all_products
+        
+    except Exception as e:
+        print(f"Error in fetch_all_products: {str(e)}")
+        raise
 
 async def ingest_products(shop: str, access_token: str):
     """
@@ -147,34 +161,64 @@ async def ingest_products(shop: str, access_token: str):
 @app.get("/callback")
 async def callback(request: Request):
     """Handle OAuth callback and trigger product ingestion"""
+    print("Starting OAuth callback process...")
+    
     shop = request.query_params.get("shop")
     code = request.query_params.get("code")
     
     if not shop or not code:
+        print("Missing required parameters")
         return JSONResponse({"error": "Missing required parameters"})
     
-    # Exchange code for access token
-    access_token = await get_access_token(shop, code)
-    
-    # Store the access token
-    store_access_token(shop, access_token)
+    print(f"Processing installation for shop: {shop}")
     
     try:
-        # Trigger product ingestion
-        product_count = await ingest_products(shop, access_token)
-        print(f"Successfully ingested {product_count} products for {shop}")
+        # Exchange code for access token
+        print("Getting access token...")
+        access_token = await get_access_token(shop, code)
+        print("Successfully got access token")
+        
+        # Store the access token
+        print("Storing access token...")
+        store_access_token(shop, access_token)
+        print("Access token stored")
+        
+        # Fetch and store products
+        print("Starting product ingestion...")
+        products = await fetch_all_products(shop, access_token)
+        print(f"Fetched {len(products)} products")
+        
+        # Store each product
+        stored_count = 0
+        for product in products:
+            processed_product = {
+                "shop": shop,
+                "product_id": product.get("id"),
+                "title": product.get("title"),
+                "handle": product.get("handle"),
+                "created_at": product.get("created_at"),
+                "updated_at": product.get("updated_at"),
+                "published_at": product.get("published_at"),
+                "status": product.get("status"),
+                "variants": product.get("variants", []),
+                "images": product.get("images", []),
+                "options": product.get("options", []),
+                "tags": product.get("tags")
+            }
+            
+            await store_product(shop, processed_product)
+            stored_count += 1
+        
+        print(f"Successfully stored {stored_count} products")
+        
+        # Redirect back to Shopify admin
+        admin_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
+        print(f"Redirecting to: {admin_url}")
+        return RedirectResponse(url=admin_url, status_code=303)
+        
     except Exception as e:
-        print(f"Error during product ingestion: {str(e)}")
-        # Continue with redirect even if ingestion fails
-    
-    # Updated redirect URL to use the full admin path
-    admin_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
-    
-    # Use 303 status code for secure redirection after POST
-    return RedirectResponse(
-        url=admin_url,
-        status_code=303
-    )
+        print(f"Error during callback processing: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Add an endpoint to manually trigger re-ingestion
 @app.post("/api/refresh-products")
