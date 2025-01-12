@@ -1,8 +1,8 @@
 import os
-import httpx
 import random
+import httpx
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
@@ -30,19 +30,58 @@ def on_startup():
     init_db()
 
 
+# ----------------------------------------
+# 1) Root Page
+# ----------------------------------------
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    # Possibly read the file from disk, or store it as a string in code
-    with open("templates/index.html", "r") as f:
-        html_content = f.read()
-    return html_content
+def index(request: Request, shop: str = None):
+    """
+    If 'shop' is not provided in the query string, serve a static index.html.
+    If 'shop' is provided, show a button to initiate the Shopify OAuth flow.
+    """
+    if not shop:
+        # No ?shop= param --> return your static HTML page
+        with open("templates/index.html", "r") as f:
+            html_content = f.read()
+        return html_content
+    else:
+        # If ?shop=... is present, build an OAuth link
+        # Example scope for demonstration:
+        scopes = "read_products"
+        # Must match your Partner Dashboard "Allowed redirection URL(s)"
+        redirect_uri = "https://vroom-demo-test-production.up.railway.app/auth/callback"
+
+        authorize_url = (
+            f"https://{shop}/admin/oauth/authorize"
+            f"?client_id={SHOPIFY_API_KEY}"
+            f"&scope={scopes}"
+            f"&redirect_uri={redirect_uri}"
+        )
+
+        # Return a small HTML snippet with a button to authorize
+        html_content = f"""
+        <html>
+            <body>
+                <h1>Authorize Shop Access</h1>
+                <p>Shop domain: <strong>{shop}</strong></p>
+                <a href="{authorize_url}">
+                    <button>Authorize Shop Access</button>
+                </a>
+            </body>
+        </html>
+        """
+        return html_content
 
 
-########################################
-# 1) OAuth Callback
-########################################
+# ----------------------------------------
+# 2) OAuth Callback
+# ----------------------------------------
 @app.get("/auth/callback")
 def auth_callback(shop: str, code: str):
+    """
+    After the merchant approves, Shopify calls this endpoint with ?shop=...&code=...
+    We exchange 'code' for an access token and store it in the DB.
+    """
     token_url = f"https://{shop}/admin/oauth/access_token"
     payload = {
         "client_id": SHOPIFY_API_KEY,
@@ -62,11 +101,15 @@ def auth_callback(shop: str, code: str):
     return {"message": f"Shop {shop} installed. Token stored."}
 
 
-########################################
-# 2) App Proxy Endpoint: /random-products
-########################################
+# ----------------------------------------
+# 3) App Proxy Endpoint: /random-products
+# ----------------------------------------
 @app.get("/random-products")
 async def random_products(request: Request):
+    """
+    Called by the Shopify app proxy:
+    GET https://{shop}.myshopify.com/apps/random-products -> forward to -> /random-products?shop={shop}
+    """
     shop = request.query_params.get("shop")
     if not shop:
         return {"error": "No 'shop' query param provided"}
@@ -80,6 +123,7 @@ async def random_products(request: Request):
         "X-Shopify-Access-Token": access_token,
         "Content-Type": "application/json"
     }
+
     async with httpx.AsyncClient() as client:
         r = await client.get(admin_api_url, headers=headers)
         if r.status_code != 200:
@@ -114,6 +158,7 @@ async def random_products(request: Request):
     return {"recommendations": recommendations}
 
 
+# If running locally (not needed on Railway if you set start command)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
