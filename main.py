@@ -32,41 +32,48 @@ def on_startup():
 
 @app.get("/")
 async def root(request: Request):
-    """Initial entry point"""
-    shop = request.query_params.get("shop")
+    """Initial entry point for the app"""
+    query_params = dict(request.query_params)
+    shop = query_params.get("shop")
     
     if not shop:
         return JSONResponse({"error": "Missing shop parameter"})
 
-    # Check if we have an access token
+    # Check if shop is installed/authenticated
     access_token = get_access_token_for_shop(shop)
     
-    # If no access token, start oauth flow
     if not access_token:
+        # Store isn't installed yet, redirect to install
         return RedirectResponse(url=f"/install?shop={shop}")
+        
+    # Store is installed, return simple HTML
+    return HTMLResponse(content=f"""
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>App Dashboard</title>
+            </head>
+            <body>
+                <h1>Welcome to your app!</h1>
+                <p>Store: {shop}</p>
+            </body>
+        </html>
+    """)
 
-    # Return success response
-    return JSONResponse({
-        "message": "App is installed and authorized",
-        "shop": shop
-    })
-
-# Update install endpoint to use /callback
 @app.get("/install")
 async def install(request: Request):
-    """Handle app installation"""
+    """Initiate the OAuth process"""
     shop = request.query_params.get("shop")
     if not shop:
         return JSONResponse({"error": "Missing shop parameter"})
 
-    # Construct the authorization URL
+    # Construct Shopify authorization URL
     scopes = "read_products,write_products"  # Add more scopes as needed
-    redirect_uri = f"{APP_URL}/callback"
     
     install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
         'client_id': SHOPIFY_API_KEY,
         'scope': scopes,
-        'redirect_uri': redirect_uri,
+        'redirect_uri': f"{APP_URL}/callback",
     })
     
     return RedirectResponse(url=install_url)
