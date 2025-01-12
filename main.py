@@ -1,70 +1,94 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+import shopify
 import random
+import os
+from typing import List, Dict, Any
+from pydantic import BaseModel
 
 app = FastAPI()
 
-# If you only want to allow your specific store domain:
-# origins = ["https://vylist-test-store.myshopify.com"]
-# If you are okay with any domain (less secure):
-origins = ["*"]
-
+# CORS middleware setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/random-products")
-async def random_products():
+# Shopify API configuration
+SHOP_URL = os.getenv('SHOP_URL', 'your-store.myshopify.com')
+ACCESS_TOKEN = os.getenv('SHOPIFY_ACCESS_TOKEN', 'your-access-token')
+
+def init_shopify():
+    shop_url = f"https://{ACCESS_TOKEN}:@{SHOP_URL}/admin/api/2024-01"
+    shopify.ShopifyResource.set_site(shop_url)
+
+class ProductResponse(BaseModel):
+    recommendations: List[Dict[str, Any]]
+
+@app.get("/random-products", response_model=ProductResponse)
+async def random_products(request: Request, limit: int = 4):
     try:
-        example_products = [
-            {
-                "title": "Random Product A",
-                "featuredImage": "https://via.placeholder.com/400?text=Prod+A",
-                "price": "$19.99",
-                "variantId": "1234567890",
-                "onlineStoreUrl": "/products/product-a"
-            },
-            {
-                "title": "Random Product B",
-                "featuredImage": "https://via.placeholder.com/400?text=Prod+B",
-                "price": "$24.99",
-                "variantId": "9876543210",
-                "onlineStoreUrl": "/products/product-b"
-            },
-            {
-                "title": "Random Product C",
-                "featuredImage": "https://via.placeholder.com/400?text=Prod+C",
-                "price": "$14.99",
-                "variantId": "5555555555",
-                "onlineStoreUrl": "/products/product-c"
-            },
-            {
-                "title": "Random Product D",
-                "featuredImage": "https://via.placeholder.com/400?text=Prod+D",
-                "price": "$29.99",
-                "variantId": "6666666666",
-                "onlineStoreUrl": "/products/product-d"
-            },
-            {
-                "title": "Random Product E",
-                "featuredImage": "https://via.placeholder.com/400?text=Prod+E",
-                "price": "$9.99",
-                "variantId": "7777777777",
-                "onlineStoreUrl": "/products/product-e"
-            }
+        init_shopify()
+        
+        # Fetch all published products
+        products = shopify.Product.find(
+            limit=250,  # Adjust based on your store size
+            published_status='published'
+        )
+        
+        if not products:
+            return {"recommendations": []}
+
+        # Filter for products with variants and images
+        valid_products = [
+            product for product in products 
+            if product.variants and product.images
         ]
 
-        random_4 = random.sample(example_products, 4)
-        return {"recommendations": random_4}
+        # Select random products
+        selected_count = min(limit, len(valid_products))
+        random_products = random.sample(valid_products, selected_count)
+
+        # Format the response
+        recommendations = []
+        for product in random_products:
+            # Get the first available variant
+            variant = product.variants[0]
+            # Get the first image
+            image = product.images[0] if product.images else None
+            
+            recommendations.append({
+                "title": product.title,
+                "featuredImage": image.src if image else "",
+                "price": float(variant.price) if variant else 0.0,
+                "variantId": str(variant.id) if variant else "",
+                "onlineStoreUrl": f"/products/{product.handle}",
+                "compareAtPrice": float(variant.compare_at_price) if variant and variant.compare_at_price else None
+            })
+
+        return {"recommendations": recommendations}
+
     except Exception as e:
-        print("Failed to get random products:", e)
-        return {"error": "Internal server error"}
+        print(f"Error fetching random products: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch random products"
+        )
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        reload=True,
+        log_level="info"
+    )
