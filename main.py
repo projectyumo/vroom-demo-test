@@ -1,13 +1,25 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import random
 
 app = FastAPI()
 
+# If you only want to allow your specific store domain:
+# origins = ["https://vylist-test-store.myshopify.com"]
+# If you are okay with any domain (less secure):
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.get("/random-products")
 async def random_products():
     try:
-        # 1. Fetch a list of products from Shopify (Admin or Storefront API) 
-        #    or use static data as a demonstration:
         example_products = [
             {
                 "title": "Random Product A",
@@ -46,16 +58,12 @@ async def random_products():
             }
         ]
 
-        # 2. Shuffle or randomly pick 4
         random_4 = random.sample(example_products, 4)
-
         return {"recommendations": random_4}
     except Exception as e:
         print("Failed to get random products:", e)
         return {"error": "Internal server error"}
 
-# If you want to run locally with: `python main.py`
-# you can include uvicorn.run here:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
