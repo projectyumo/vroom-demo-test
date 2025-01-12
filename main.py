@@ -45,51 +45,78 @@ def decode_session_token(token: str) -> Optional[dict]:
 
 @app.get("/")
 async def root(request: Request):
-    """
-    Handle the initial app load and session token verification
-    """
-    # Get query parameters
+    """Handle the initial app load"""
     query_params = dict(request.query_params)
     shop = query_params.get("shop")
     host = query_params.get("host")
-    session = query_params.get("session")
-    id_token = query_params.get("id_token")
-
+    embedded = query_params.get("embedded") == "1"
+    
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-#     # Verify HMAC if present
-#     hmac_value = query_params.get("hmac")
-#     if hmac_value and not verify_hmac(query_params):
-#         raise HTTPException(status_code=400, detail="Invalid HMAC")
-
-    # Check if we have an access token for this shop
+    # Check if we have an access token
     access_token = get_access_token_for_shop(shop)
     
     # If no access token, redirect to install
     if not access_token:
-        return RedirectResponse(url=f"/install?shop={shop}")
+        install_url = f"/install?shop={shop}"
+        return RedirectResponse(url=install_url)
 
-    # If we have an id_token, verify it
-    if id_token:
-        decoded = decode_session_token(id_token)
-        if not decoded or decoded.get("aud") != SHOPIFY_API_KEY:
-            raise HTTPException(status_code=400, detail="Invalid session token")
-
-    # Here you would normally return your app's frontend
-    # For now, let's return a simple success message
-    return HTMLResponse(content="""
+    # App is installed, return your app's frontend with proper App Bridge configuration
+    return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
             <head>
-                <title>App Installed</title>
+                <title>Shopify App</title>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                
+                <!-- Import Shopify App Bridge -->
+                <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+                <script src="https://cdn.shopify.com/shopifycloud/app-bridge-utils/1.0.0/index.js"></script>
+                
+                <script>
+                    window.shopify_app_bridge = {{
+                        apiKey: '{SHOPIFY_API_KEY}',
+                        host: '{host}',
+                        forceRedirect: true
+                    }};
+                </script>
             </head>
             <body>
-                <h1>App Successfully Installed!</h1>
-                <p>Your app is now ready to use.</p>
+                <div id="app">
+                    <h1>App Successfully Installed!</h1>
+                    <p>Your app is now ready to use.</p>
+                </div>
+
+                <script>
+                    // Initialize App Bridge
+                    var app = window.shopify_app_bridge;
+                    if (app) {{
+                        var AppBridge = window['app-bridge'];
+                        var createApp = AppBridge.default;
+                        var app = createApp(window.shopify_app_bridge);
+                    }}
+                </script>
             </body>
         </html>
     """)
+
+# Add this route to handle the client-side redirect
+@app.get("/exitframe")
+async def exit_frame(request: Request):
+    """Handle redirect out of iframe when needed"""
+    shop = request.query_params.get("shop")
+    host = request.query_params.get("host")
+    
+    if not shop:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+        
+    redirect_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
+    if host:
+        redirect_url = f"https://{host}/apps/{SHOPIFY_API_KEY}"
+        
+    return RedirectResponse(url=redirect_url)
 
 @app.on_event("startup")
 def on_startup():
