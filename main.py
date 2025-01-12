@@ -1,18 +1,15 @@
 import os
 import random
 import httpx
-
 import hmac
 import json
 import hashlib
 import base64
 from urllib.parse import urlencode, quote
-
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
-
 from db import init_db, store_access_token, get_access_token_for_shop
 from typing import Optional
 import jwt
@@ -26,7 +23,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://admin.shopify.com",
+        "https://shopify.com",
+        "*myshopify.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,8 +49,7 @@ async def root(request: Request):
     """Handle the initial app load"""
     query_params = dict(request.query_params)
     shop = query_params.get("shop")
-    host = query_params.get("host")
-    embedded = query_params.get("embedded") == "1"
+    host = query_params.get("host", "")
     
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
@@ -62,26 +62,15 @@ async def root(request: Request):
         install_url = f"/install?shop={shop}"
         return RedirectResponse(url=install_url)
 
-    # App is installed, return your app's frontend with proper App Bridge configuration
-    return HTMLResponse(content=f"""
+    # Create HTML response with proper security headers
+    html_content = f"""
         <!DOCTYPE html>
         <html>
             <head>
                 <title>Shopify App</title>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                
-                <!-- Import Shopify App Bridge -->
                 <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-                <script src="https://cdn.shopify.com/shopifycloud/app-bridge-utils/1.0.0/index.js"></script>
-                
-                <script>
-                    window.shopify_app_bridge = {{
-                        apiKey: '{SHOPIFY_API_KEY}',
-                        host: '{host}',
-                        forceRedirect: true
-                    }};
-                </script>
             </head>
             <body>
                 <div id="app">
@@ -90,17 +79,34 @@ async def root(request: Request):
                 </div>
 
                 <script>
-                    // Initialize App Bridge
-                    var app = window.shopify_app_bridge;
-                    if (app) {{
+                    if (window.top === window.self) {
+                        // If the app is not embedded, redirect to Shopify admin
+                        window.location.href = "https://admin.shopify.com";
+                    } else {
+                        // Initialize App Bridge
+                        var config = {{
+                            apiKey: '{SHOPIFY_API_KEY}',
+                            host: '{host}',
+                            forceRedirect: true
+                        }};
+                        
                         var AppBridge = window['app-bridge'];
                         var createApp = AppBridge.default;
-                        var app = createApp(window.shopify_app_bridge);
+                        var app = createApp(config);
                     }}
                 </script>
             </body>
         </html>
-    """)
+    """
+    
+    response = HTMLResponse(content=html_content)
+    
+    # Add security headers
+    response.headers["Content-Security-Policy"] = "frame-ancestors https://*.shopify.com https://*.myshopify.com;"
+    response.headers["X-Frame-Options"] = "ALLOWALL"
+    
+    return response
+
 
 # Add this route to handle the client-side redirect
 @app.get("/exitframe")
