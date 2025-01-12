@@ -28,19 +28,25 @@ def init_db():
     conn.close()
 
 def store_access_token(shop_domain: str, token: str):
-    """Inserts or updates the token for a given shop."""
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    upsert_sql = """
-    INSERT INTO shop_tokens (shop, access_token)
-    VALUES (%s, %s)
-    ON CONFLICT (shop) DO UPDATE
-      SET access_token = EXCLUDED.access_token;
-    """
-    cur.execute(upsert_sql, (shop_domain, token))
-    conn.commit()
-    cur.close()
-    conn.close()
+    print(f"DEBUG: Storing token for {shop_domain}: {token}")
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        upsert_sql = """
+        INSERT INTO shop_tokens (shop, access_token)
+        VALUES (%s, %s)
+        ON CONFLICT (shop) DO UPDATE
+          SET access_token = EXCLUDED.access_token;
+        """
+        cur.execute(upsert_sql, (shop_domain, token))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("DEBUG: Token stored successfully.")
+    except Exception as e:
+        print(f"ERROR in store_access_token: {e}")
+        raise
+
 
 def get_access_token_for_shop(shop_domain: str) -> str | None:
     """Retrieves the stored access token for a shop."""

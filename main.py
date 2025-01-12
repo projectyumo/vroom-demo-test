@@ -26,7 +26,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
+    print("DEBUG: init_db() being called at startup")
     init_db()
+
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
