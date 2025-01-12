@@ -79,9 +79,9 @@ async def root(request: Request):
                 </div>
 
                 <script>
-                    if (window.top === window.self) {
+                    if (window.top === window.self) {{
                         window.location.href = "https://admin.shopify.com";
-                    } else {
+                    }} else {{
                         var config = {{
                             apiKey: '{SHOPIFY_API_KEY}',
                             host: '{host}',
@@ -91,7 +91,7 @@ async def root(request: Request):
                         var AppBridge = window['app-bridge'];
                         var createApp = AppBridge.default;
                         var app = createApp(config);
-                    }
+                    }}
                 </script>
             </body>
         </html>
