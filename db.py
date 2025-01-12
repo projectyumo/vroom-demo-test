@@ -1,7 +1,9 @@
 import os
 import psycopg2
 from dotenv import load_dotenv, find_dotenv
-
+import sqlite3
+import json
+from typing import Dict, Any
 
 # Load environment variables from .env (if running locally).
 # On Railway, these are typically injected automatically, but calling load_dotenv won't hurt.
