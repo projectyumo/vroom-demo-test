@@ -91,7 +91,7 @@ async def root(request: Request):
                         var AppBridge = window['app-bridge'];
                         var createApp = AppBridge.default;
                         var app = createApp(config);
-                    }}
+                    }
                 </script>
             </body>
         </html>
