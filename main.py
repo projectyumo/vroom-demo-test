@@ -43,21 +43,14 @@ async def root(request: Request):
     
     # If no access token, redirect to install
     if not access_token:
-        return RedirectResponse(f"/install?shop={shop}")
+        return RedirectResponse(url=f"/install?shop={shop}")
 
-    # If we have an access token, return simple dashboard
-    return HTMLResponse(content="""
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <title>App Dashboard</title>
-            </head>
-            <body>
-                <h1>Your App Dashboard</h1>
-                <p>Successfully authenticated!</p>
-            </body>
-        </html>
-    """)
+    # Return simple success response
+    return JSONResponse({
+        "status": "success",
+        "message": "App is installed and authorized",
+        "shop": shop
+    })
 
 @app.get("/install")
 async def install(request: Request):
@@ -174,10 +167,13 @@ async def callback(request: Request):
         print(f"Error during product ingestion: {str(e)}")
         # Continue with redirect even if ingestion fails
     
-    # Redirect back to Shopify admin
+    # Updated redirect URL to use the full admin path
+    admin_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
+    
+    # Use 303 status code for secure redirection after POST
     return RedirectResponse(
-        url=f"https://{shop}/admin",
-        status_code=302
+        url=admin_url,
+        status_code=303
     )
 
 # Add an endpoint to manually trigger re-ingestion
