@@ -3,6 +3,7 @@ import httpx
 import random
 
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 
@@ -64,6 +65,32 @@ def auth_callback(shop: str, code: str):
     # 3. Return or redirect merchant to your app's UI
     return {"message": f"Shop {shop} installed. Token stored."}
 
+@app.get("/install")
+def install(shop: str):
+    """
+    The merchant visits /install?shop=example-store.myshopify.com
+    We redirect them to Shopify's oauth/authorize page, which triggers the OAuth flow.
+    """
+    # Build the OAuth authorize URL
+    # e.g., https://{shop}/admin/oauth/authorize
+    #       ?client_id=YOUR_SHOPIFY_API_KEY
+    #       &scope=desired_scopes
+    #       &redirect_uri=https://yourapp.com/auth/callback
+    # Possibly you have more scopes or a state parameter:
+    client_id = SHOPIFY_API_KEY  # from your env
+    scopes = "read_products"     # or "read_products,write_products" etc.
+    redirect_uri = "https://yourapp.up.railway.app/auth/callback"
+
+    # Construct the final URL
+    authorize_url = (
+        f"https://{shop}/admin/oauth/authorize"
+        f"?client_id={client_id}"
+        f"&scope={scopes}"
+        f"&redirect_uri={redirect_uri}"
+    )
+
+    # Redirect the user to Shopify's install prompt
+    return RedirectResponse(authorize_url)
 
 ########################################
 # 2) App Proxy Endpoint: /random-products
