@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 
 from db import init_db, store_access_token, get_access_token_for_shop
+from typing import Optional
+import jwt
 
 load_dotenv(find_dotenv())
 
@@ -29,6 +31,65 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Add these new functions and routes to your existing FastAPI app
+
+def decode_session_token(token: str) -> Optional[dict]:
+    """Decode the JWT session token from Shopify"""
+    try:
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        return decoded
+    except jwt.InvalidTokenError:
+        return None
+
+@app.get("/")
+async def root(request: Request):
+    """
+    Handle the initial app load and session token verification
+    """
+    # Get query parameters
+    query_params = dict(request.query_params)
+    shop = query_params.get("shop")
+    host = query_params.get("host")
+    session = query_params.get("session")
+    id_token = query_params.get("id_token")
+
+    if not shop:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    # Verify HMAC if present
+    hmac_value = query_params.get("hmac")
+    if hmac_value and not verify_hmac(query_params):
+        raise HTTPException(status_code=400, detail="Invalid HMAC")
+
+    # Check if we have an access token for this shop
+    access_token = get_access_token_for_shop(shop)
+    
+    # If no access token, redirect to install
+    if not access_token:
+        return RedirectResponse(url=f"/install?shop={shop}")
+
+    # If we have an id_token, verify it
+    if id_token:
+        decoded = decode_session_token(id_token)
+        if not decoded or decoded.get("aud") != SHOPIFY_API_KEY:
+            raise HTTPException(status_code=400, detail="Invalid session token")
+
+    # Here you would normally return your app's frontend
+    # For now, let's return a simple success message
+    return HTMLResponse(content="""
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>App Installed</title>
+            </head>
+            <body>
+                <h1>App Successfully Installed!</h1>
+                <p>Your app is now ready to use.</p>
+            </body>
+        </html>
+    """)
 
 @app.on_event("startup")
 def on_startup():

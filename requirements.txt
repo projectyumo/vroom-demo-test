@@ -5,3 +5,5 @@ ShopifyAPI
 python-dotenv
 httpx
 psycopg2
+typing
+PyJWT
