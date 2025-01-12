@@ -1,6 +1,8 @@
 import os
 import psycopg2
 from dotenv import load_dotenv, find_dotenv
+        conn.close()
+
 
 # Load environment variables from .env (if running locally).
 # On Railway, these are typically injected automatically, but calling load_dotenv won't hurt.
@@ -26,6 +28,91 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
+    
+async def store_product(shop: str, product: Dict[str, Any]):
+    """
+    Store a product in the database
+    """
+    conn = sqlite3.connect('shopify_app.db')
+    cursor = conn.cursor()
+    
+    try:
+        # Create products table if it doesn't exist
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products
+        (shop TEXT,
+         product_id TEXT,
+         title TEXT,
+         handle TEXT,
+         created_at TEXT,
+         updated_at TEXT,
+         published_at TEXT,
+         status TEXT,
+         variants TEXT,
+         images TEXT,
+         options TEXT,
+         tags TEXT,
+         PRIMARY KEY (shop, product_id))
+        ''')
+        
+        # Convert lists and dictionaries to JSON strings
+        product_data = product.copy()
+        product_data['variants'] = json.dumps(product_data['variants'])
+        product_data['images'] = json.dumps(product_data['images'])
+        product_data['options'] = json.dumps(product_data['options'])
+        
+        # Insert or replace product
+        cursor.execute('''
+        INSERT OR REPLACE INTO products
+        (shop, product_id, title, handle, created_at, updated_at, published_at,
+         status, variants, images, options, tags)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            product_data['shop'],
+            str(product_data['product_id']),
+            product_data['title'],
+            product_data['handle'],
+            product_data['created_at'],
+            product_data['updated_at'],
+            product_data['published_at'],
+            product_data['status'],
+            product_data['variants'],
+            product_data['images'],
+            product_data['options'],
+            product_data['tags']
+        ))
+        
+        conn.commit()
+    finally:
+        conn.close()
+
+async def get_shop_products(shop: str) -> list:
+    """
+    Retrieve all products for a shop
+    """
+    conn = sqlite3.connect('shopify_app.db')
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            'SELECT * FROM products WHERE shop = ?',
+            (shop,)
+        )
+        
+        columns = [description[0] for description in cursor.description]
+        products = []
+        
+        for row in cursor.fetchall():
+            product = dict(zip(columns, row))
+            # Convert JSON strings back to Python objects
+            product['variants'] = json.loads(product['variants'])
+            product['images'] = json.loads(product['images'])
+            product['options'] = json.loads(product['options'])
+            products.append(product)
+            
+        return products
+    finally:
+        conn.close()
 
 def store_access_token(shop_domain: str, token: str):
     print(f"DEBUG: Storing token for {shop_domain}: {token}")

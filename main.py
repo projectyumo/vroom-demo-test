@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
-from db import init_db, store_access_token, get_access_token_for_shop
+from db import init_db, store_access_token, get_access_token_for_shop, store_product, get_shop_products
 from urllib.parse import urlencode
 
 load_dotenv(find_dotenv())
@@ -78,9 +78,82 @@ async def install(request: Request):
     
     return RedirectResponse(url=auth_url)
 
+async def fetch_all_products(shop: str, access_token: str) -> list:
+    """
+    Fetch all products from a shop using pagination
+    """
+    products = []
+    page_info = None
+    
+    async with httpx.AsyncClient() as client:
+        while True:
+            # Construct URL with pagination
+            url = f"https://{shop}/admin/api/2024-01/products.json?limit=250"
+            if page_info:
+                url += f"&page_info={page_info}"
+            
+            headers = {
+                "X-Shopify-Access-Token": access_token,
+                "Content-Type": "application/json"
+            }
+            
+            response = await client.get(url, headers=headers)
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Failed to fetch products: {response.text}"
+                )
+            
+            data = response.json()
+            products.extend(data.get("products", []))
+            
+            # Check for pagination headers
+            link_header = response.headers.get("Link", "")
+            if 'rel="next"' in link_header:
+                # Extract page_info from Link header
+                page_info = link_header.split("page_info=")[1].split(">")[0]
+            else:
+                break
+    
+    return products
+
+async def ingest_products(shop: str, access_token: str):
+    """
+    Fetch and store all products for a shop
+    """
+    try:
+        # Fetch all products
+        products = await fetch_all_products(shop, access_token)
+        
+        # Process and store each product
+        for product in products:
+            processed_product = {
+                "shop": shop,
+                "product_id": product.get("id"),
+                "title": product.get("title"),
+                "handle": product.get("handle"),
+                "created_at": product.get("created_at"),
+                "updated_at": product.get("updated_at"),
+                "published_at": product.get("published_at"),
+                "status": product.get("status"),
+                "variants": product.get("variants", []),
+                "images": product.get("images", []),
+                "options": product.get("options", []),
+                "tags": product.get("tags")
+            }
+            
+            # Store in database - implement this function in your db.py
+            await store_product(shop, processed_product)
+            
+        return len(products)
+    except Exception as e:
+        print(f"Error ingesting products for {shop}: {str(e)}")
+        raise
+
 @app.get("/callback")
 async def callback(request: Request):
-    """Handle OAuth callback"""
+    """Handle OAuth callback and trigger product ingestion"""
     shop = request.query_params.get("shop")
     code = request.query_params.get("code")
     
@@ -93,11 +166,44 @@ async def callback(request: Request):
     # Store the access token
     store_access_token(shop, access_token)
     
-    # Important: Redirect to Shopify admin properly
+    try:
+        # Trigger product ingestion
+        product_count = await ingest_products(shop, access_token)
+        print(f"Successfully ingested {product_count} products for {shop}")
+    except Exception as e:
+        print(f"Error during product ingestion: {str(e)}")
+        # Continue with redirect even if ingestion fails
+    
+    # Redirect back to Shopify admin
     return RedirectResponse(
         url=f"https://{shop}/admin",
         status_code=302
     )
+
+# Add an endpoint to manually trigger re-ingestion
+@app.post("/api/refresh-products")
+async def refresh_products(request: Request):
+    """Manually trigger product refresh for a shop"""
+    shop = request.query_params.get("shop")
+    
+    if not shop:
+        return JSONResponse({"error": "Missing shop parameter"})
+    
+    access_token = get_access_token_for_shop(shop)
+    if not access_token:
+        return JSONResponse({"error": "Shop not authorized"})
+    
+    try:
+        product_count = await ingest_products(shop, access_token)
+        return JSONResponse({
+            "success": True,
+            "message": f"Successfully refreshed {product_count} products"
+        })
+    except Exception as e:
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        })
 
 async def get_access_token(shop: str, code: str) -> str:
     """Exchange temporary code for permanent access token"""
@@ -154,31 +260,30 @@ async def get_products(request: Request):
 
 @app.get("/random-products")
 async def random_products(request: Request):
-    """Get random products from the store"""
+    """Get random products from our local database"""
     shop = request.query_params.get("shop")
     if not shop:
         return JSONResponse({"error": "Missing shop parameter"})
 
-    access_token = get_access_token_for_shop(shop)
-    if not access_token:
-        return JSONResponse({"error": "Shop not authorized"})
+    # Get products from local database
+    try:
+        products = await get_shop_products(shop)
+    except Exception as e:
+        print(f"Error fetching products from database: {str(e)}")
+        return JSONResponse({"error": "Failed to fetch products from database"})
 
-    # Fetch products
-    url = f"https://{shop}/admin/api/2024-01/products.json"
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            url,
-            headers={
-                'X-Shopify-Access-Token': access_token,
-                'Content-Type': 'application/json'
-            }
-        )
-        
-        if response.status_code != 200:
-            return JSONResponse({"error": f"Failed to fetch products: {response.text}"})
+    if not products:
+        # If no products in database, try to refresh from Shopify
+        access_token = get_access_token_for_shop(shop)
+        if not access_token:
+            return JSONResponse({"error": "Shop not authorized"})
             
-        data = response.json()
-        products = data.get("products", [])
+        try:
+            await ingest_products(shop, access_token)
+            products = await get_shop_products(shop)
+        except Exception as e:
+            print(f"Error refreshing products: {str(e)}")
+            return JSONResponse({"error": "Failed to refresh products"})
 
     if not products:
         return JSONResponse({"recommendations": []})
@@ -189,12 +294,12 @@ async def random_products(request: Request):
 
     recommendations = []
     for p in chosen:
-        images = p.get("images", [])
-        variants = p.get("variants", [])
-        handle = p.get("handle", "")
+        images = p['images']  # Already parsed from JSON in get_shop_products
+        variants = p['variants']  # Already parsed from JSON in get_shop_products
+        handle = p['handle']
         
         recommendations.append({
-            "title": p.get("title", "Untitled"),
+            "title": p['title'],
             "featuredImage": images[0]["src"] if images else "https://via.placeholder.com/400",
             "price": f"${variants[0].get('price', '0.00')}" if variants else "$0.00",
             "variantId": variants[0].get("id", "") if variants else "",
