@@ -58,10 +58,10 @@ async def root(request: Request):
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-    # Verify HMAC if present
-    hmac_value = query_params.get("hmac")
-    if hmac_value and not verify_hmac(query_params):
-        raise HTTPException(status_code=400, detail="Invalid HMAC")
+#     # Verify HMAC if present
+#     hmac_value = query_params.get("hmac")
+#     if hmac_value and not verify_hmac(query_params):
+#         raise HTTPException(status_code=400, detail="Invalid HMAC")
 
     # Check if we have an access token for this shop
     access_token = get_access_token_for_shop(shop)
