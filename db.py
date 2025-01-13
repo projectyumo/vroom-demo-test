@@ -114,6 +114,36 @@ async def store_product(shop: str, product: Dict[str, Any]):
     finally:
         conn.close()
 
+async def get_shop_products(shop: str) -> list:
+    """Retrieve all products for a shop"""
+    try:
+        conn = sqlite3.connect('shopify_app.db')
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            'SELECT * FROM products WHERE shop = ?',
+            (shop,)
+        )
+        
+        columns = [description[0] for description in cursor.description]
+        products = []
+        
+        for row in cursor.fetchall():
+            product = dict(zip(columns, row))
+            # Convert JSON strings back to Python objects
+            product['variants'] = json.loads(product['variants'])
+            product['images'] = json.loads(product['images'])
+            product['options'] = json.loads(product['options'])
+            products.append(product)
+        
+        logger.info(f"INFO: Retrieved {len(products)} products for shop {shop}")
+        return products
+    except Exception as e:
+        logger.error(f"ERROR: Failed to get shop products: {str(e)}")
+        raise
+    finally:
+        conn.close()
+
 def get_access_token_for_shop(shop_domain: str) -> str | None:
     """Retrieves the stored access token for a shop."""
     try:
