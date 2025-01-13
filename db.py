@@ -90,4 +90,23 @@ async def store_product(shop: str, product: dict):
         ))
         await db.commit()
 
+async def get_shop_products(shop: str) -> list:
+    """Get all products for a shop asynchronously"""
+    async with aiosqlite.connect('shopify_app.db') as db:
+        async with db.execute(
+            'SELECT * FROM products WHERE shop = ?',
+            (shop,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            # Get column names
+            columns = [description[0] for description in cursor.description]
+            products = []
+            for row in rows:
+                product = dict(zip(columns, row))
+                # Convert JSON strings back to objects
+                for field in ['variants', 'images', 'options']:
+                    if product.get(field):
+                        product[field] = json.loads(product[field])
+                products.append(product)
+            return products
 
