@@ -125,13 +125,6 @@ async def root(request: Request):
     
     # If we have embedded=1, it's an app load within Shopify Admin
     if params.get('embedded') == '1':
-        # Verify HMAC if present
-        if 'hmac' in params:
-            is_valid = verify_hmac(params.copy())
-            if not is_valid:
-                logger.error("ERROR: Invalid HMAC signature")
-                raise HTTPException(status_code=400, detail="Invalid HMAC signature")
-        
         # If we have a valid session, return app
         if access_token:
             logger.info(f"INFO: Valid session found for {shop}")
