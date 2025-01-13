@@ -331,28 +331,6 @@ async def get_products(request: Request):
             
         return response.json()
 
-# Add an endpoint to check ingestion status (optional)
-@app.get("/api/ingestion-status")
-async def check_ingestion_status(request: Request):
-    """Check product ingestion status for a shop"""
-    shop = request.query_params.get("shop")
-    if not shop:
-        return JSONResponse({"error": "Missing shop parameter"})
-    
-    try:
-        products = await get_shop_products(shop)
-        return JSONResponse({
-            "status": "success",
-            "product_count": len(products),
-            "shop": shop
-        })
-    except Exception as e:
-        return JSONResponse({
-            "status": "error",
-            "message": str(e),
-            "shop": shop
-        })
-    
 @app.get("/random-products")
 async def random_products(request: Request):
     """Get random products from our local database"""

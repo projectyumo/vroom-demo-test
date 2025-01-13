@@ -90,40 +90,4 @@ async def store_product(shop: str, product: dict):
         ))
         await db.commit()
 
-async def get_shop_products(shop: str) -> list:
-    """
-    Retrieve all products for a shop
-    """
-    conn = sqlite3.connect('shopify_app.db')
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute(
-            'SELECT * FROM products WHERE shop = ?',
-            (shop,)
-        )
-        
-        columns = [description[0] for description in cursor.description]
-        products = []
-        
-        for row in cursor.fetchall():
-            product = dict(zip(columns, row))
-            # Convert JSON strings back to Python objects
-            product['variants'] = json.loads(product['variants'])
-            product['images'] = json.loads(product['images'])
-            product['options'] = json.loads(product['options'])
-            products.append(product)
-            
-        return products
-    finally:
-        conn.close()
-
-    WHERE shop = %s
-    LIMIT 1
-    """
-    cur.execute(select_sql, (shop_domain,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row[0] if row else None
 
