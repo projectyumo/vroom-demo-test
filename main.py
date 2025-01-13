@@ -69,7 +69,7 @@ async def install(request: Request):
     
     install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
         'client_id': SHOPIFY_API_KEY,
-        'scopes': scopes,
+        'access_scopes': scopes,
         'redirect_uri': redirect_uri,
     })
     
