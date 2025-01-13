@@ -206,12 +206,13 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
     print("Starting OAuth callback...")
     shop = request.query_params.get("shop")
     code = request.query_params.get("code")
+    host = request.query_params.get("host")
     
     if not all([shop, code]):
         raise HTTPException(status_code=400, detail="Missing required parameters")
 
     try:
-        # First, get and store the access token
+        # Get and store access token
         print("Getting access token...")
         access_token = await get_access_token(shop, code)
         print("Successfully got access token")
@@ -225,10 +226,19 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
         background_tasks.add_task(background_fetch_products, shop, access_token)
         print("Product fetch scheduled in background")
 
-        # Redirect to the app page
-        redirect_url = f"https://{shop}/admin/apps"
+        # Construct the proper redirect URL
+        if host:
+            redirect_url = f"https://{host}/apps/{SHOPIFY_API_KEY}"
+        else:
+            redirect_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
+            
         print(f"Redirecting to: {redirect_url}")
-        return RedirectResponse(url=redirect_url)
+        
+        # Use 302 status code for temporary redirect
+        return RedirectResponse(
+            url=redirect_url,
+            status_code=302
+        )
 
     except Exception as e:
         print(f"Error in callback: {str(e)}")
