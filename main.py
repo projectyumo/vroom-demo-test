@@ -37,28 +37,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def root(request: Request):
-    """Initial entry point"""
-    shop = request.query_params.get("shop")
-
-    if not shop:
-        return JSONResponse({"error": "Missing shop parameter"})
-
-    # Check if we have an access token
-    access_token = get_access_token_for_shop(shop)
-
-    # If no access token, redirect to install
-    if not access_token:
-        return RedirectResponse(url=f"/install?shop={shop}")
-
-    # Return simple success response
-    return JSONResponse({
-        "status": "success",
-        "message": "App is installed and authorized",
-        "shop": shop
-    })
-
 @app.on_event("startup")
 def on_startup():
     """Initialize application"""
@@ -102,27 +80,96 @@ async def ingest_products(shop: str, access_token: str):
         print(f"Error ingesting products for {shop}: {str(e)}")
         raise
 
+def verify_hmac(params: dict) -> bool:
+    """Verify the HMAC signature from Shopify"""
+    try:
+        # Remove hmac from params if it exists
+        hmac_value = params.pop('hmac', '')
+        
+        # Sort and join parameters
+        sorted_params = "&".join([
+            f"{key}={value}"
+            for key, value in sorted(params.items())
+        ])
+        
+        # Calculate HMAC
+        calculated_hmac = hmac.new(
+            SHOPIFY_API_SECRET.encode('utf-8'),
+            sorted_params.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        return hmac.compare_digest(calculated_hmac, hmac_value)
+    except Exception as e:
+        logger.error(f"ERROR: HMAC verification failed: {str(e)}")
+        return False
+
+@app.get("/")
+async def root(request: Request):
+    """Handle initial app load and installation"""
+    params = dict(request.query_params)
+    logger.info(f"INFO: Received request with params: {params}")
+    
+    # Get the shop parameter
+    shop = params.get('shop')
+    if not shop:
+        logger.error("ERROR: Missing shop parameter")
+        return JSONResponse({"error": "Missing shop parameter"})
+        
+    # Ensure shop is a valid .myshopify.com domain
+    if not shop.endswith('.myshopify.com'):
+        shop = f"{shop}.myshopify.com"
+    
+    # Check for an existing access token
+    access_token = get_access_token_for_shop(shop)
+    
+    # If we have embedded=1, it's an app load within Shopify Admin
+    if params.get('embedded') == '1':
+        # Verify HMAC if present
+        if 'hmac' in params:
+            is_valid = verify_hmac(params.copy())
+            if not is_valid:
+                logger.error("ERROR: Invalid HMAC signature")
+                raise HTTPException(status_code=400, detail="Invalid HMAC signature")
+        
+        # If we have a valid session, return app
+        if access_token:
+            logger.info(f"INFO: Valid session found for {shop}")
+            return JSONResponse({
+                "status": "success",
+                "message": "App is installed and authorized",
+                "shop": shop
+            })
+    
+    # No valid session, start OAuth
+    logger.info(f"INFO: Redirecting to OAuth for {shop}")
+    return RedirectResponse(url=f"/install?shop={quote(shop)}")
+
 @app.get("/install")
 async def install(request: Request):
-    """
-    Step 1: App installation begins here.
-    The merchant clicks install, and we redirect them to Shopify's OAuth screen.
-    """
+    """Handle app installation"""
     shop = request.query_params.get("shop")
     if not shop:
+        logger.error("ERROR: Missing shop parameter in install route")
         raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-    # Construct the authorization URL with required scopes
-    scopes = "read_products,write_products"  # Explicitly request product access
-    redirect_uri = f"{os.environ.get('APP_URL')}/callback"
+    # Ensure shop is a valid .myshopify.com domain
+    if not shop.endswith('.myshopify.com'):
+        shop = f"{shop}.myshopify.com"
 
+    # Construct OAuth URL
+    scopes = "read_products,write_products"
+    redirect_uri = f"{APP_URL}/callback"
+    nonce = os.urandom(16).hex()
+    
     install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
         'client_id': SHOPIFY_API_KEY,
         'scope': scopes,
         'redirect_uri': redirect_uri,
+        'state': nonce
     })
-
-    print(f"Redirecting to Shopify OAuth: {install_url}")
+    
+    logger.info(f"INFO: Redirecting to Shopify OAuth: {install_url}")
     return RedirectResponse(url=install_url)
 
 @app.get("/callback")
