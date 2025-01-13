@@ -157,6 +157,8 @@ async def install(request: Request):
     shop = request.query_params.get("shop")
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
+        
+       
 
     # Construct the authorization URL with required scopes
     scopes = "read_products,write_products"  # Explicitly request product access
@@ -166,6 +168,8 @@ async def install(request: Request):
         'client_id': SHOPIFY_API_KEY,
         'scope': scopes,
         'redirect_uri': redirect_uri,
+        'grant_options[]': 'per-user'
+        
     })
     
     print(f"Redirecting to Shopify OAuth: {install_url}")
@@ -219,18 +223,23 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
         
         # Store the access token
         print("Storing access token...")
-        store_access_token(shop, access_token)
+        await store_access_token(shop, access_token)
         print("Access token stored successfully")
 
+        # Verify the token was stored
+        stored_token = await get_access_token_for_shop(shop)  # Make sure this is async
+        if stored_token != access_token:
+            raise HTTPException(status_code=500, detail="Token storage verification failed")
+        print("Token storage verified")
+        
         # Add product fetch to background tasks
         background_tasks.add_task(background_fetch_products, shop, access_token)
         print("Product fetch scheduled in background")
 
         # Construct the proper redirect URL
+        redirect_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
         if host:
             redirect_url = f"https://{host}/apps/{SHOPIFY_API_KEY}"
-        else:
-            redirect_url = f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}"
             
         print(f"Redirecting to: {redirect_url}")
         
