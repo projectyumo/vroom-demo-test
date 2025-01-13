@@ -7,8 +7,10 @@ from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 from db import init_db, store_access_token, get_access_token_for_shop, store_product, get_shop_products
-from urllib.parse import urlencode
 from fastapi import BackgroundTasks
+
+import hashlib
+from urllib.parse import urlencode, quote
 
 # Configure logging
 logging.basicConfig(
@@ -35,6 +37,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+async def root(request: Request):
+    """Initial entry point"""
+    shop = request.query_params.get("shop")
+
+    if not shop:
+        return JSONResponse({"error": "Missing shop parameter"})
+
+    # Check if we have an access token
+    access_token = get_access_token_for_shop(shop)
+
+    # If no access token, redirect to install
+    if not access_token:
+        return RedirectResponse(url=f"/install?shop={shop}")
+
+    # Return simple success response
+    return JSONResponse({
+        "status": "success",
+        "message": "App is installed and authorized",
+        "shop": shop
+    })
+
 @app.on_event("startup")
 def on_startup():
     """Initialize application"""
@@ -44,6 +68,62 @@ def on_startup():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("INFO: Application shutdown complete.")
+
+async def ingest_products(shop: str, access_token: str):
+    """
+    Fetch and store all products for a shop
+    """
+    try:
+        # Fetch all products
+        products = await fetch_all_products(shop, access_token)
+
+        # Process and store each product
+        for product in products:
+            processed_product = {
+                "shop": shop,
+                "product_id": product.get("id"),
+                "title": product.get("title"),
+                "handle": product.get("handle"),
+                "created_at": product.get("created_at"),
+                "updated_at": product.get("updated_at"),
+                "published_at": product.get("published_at"),
+                "status": product.get("status"),
+                "variants": product.get("variants", []),
+                "images": product.get("images", []),
+                "options": product.get("options", []),
+                "tags": product.get("tags")
+            }
+
+            # Store in database - implement this function in your db.py
+            await store_product(shop, processed_product)
+
+        return len(products)
+    except Exception as e:
+        print(f"Error ingesting products for {shop}: {str(e)}")
+        raise
+
+@app.get("/install")
+async def install(request: Request):
+    """
+    Step 1: App installation begins here.
+    The merchant clicks install, and we redirect them to Shopify's OAuth screen.
+    """
+    shop = request.query_params.get("shop")
+    if not shop:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    # Construct the authorization URL with required scopes
+    scopes = "read_products,write_products"  # Explicitly request product access
+    redirect_uri = f"{os.environ.get('APP_URL')}/callback"
+
+    install_url = f"https://{shop}/admin/oauth/authorize?" + urlencode({
+        'client_id': SHOPIFY_API_KEY,
+        'scope': scopes,
+        'redirect_uri': redirect_uri,
+    })
+
+    print(f"Redirecting to Shopify OAuth: {install_url}")
+    return RedirectResponse(url=install_url)
 
 @app.get("/callback")
 async def callback(request: Request, background_tasks: BackgroundTasks):
