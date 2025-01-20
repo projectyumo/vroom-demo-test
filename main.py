@@ -414,6 +414,34 @@ async def proxy_try_on(request: Request, try_on_data: TryOnRequest):
     except Exception as e:
         print(f"Error processing try-on request: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+        
+@app.get("/api/vylist/")
+async def proxy_handler(request: Request):
+    """Handle all proxy requests"""
+    shop = request.query_params.get("shop")
+    path_prefix = request.query_params.get("path_prefix")
+    
+    if not shop:
+        return JSONResponse({"error": "Missing shop parameter"})
+
+    print(f"Received path_prefix: {path_prefix}")  # Debug log
+
+    # Extract the actual endpoint from path_prefix
+    if path_prefix:
+        # Remove '/apps/' from the beginning if it exists
+        endpoint = path_prefix.replace('/apps/', '')
+        print(f"Extracted endpoint: {endpoint}")  # Debug log
+
+        # Route to appropriate handler based on endpoint
+        if endpoint == 'random-products':
+            return await proxy_random_products(request)
+        elif endpoint == 'try-on':
+            # For POST requests to try-on
+            if request.method == "POST":
+                try_on_data = await request.json()
+                return await proxy_try_on(request, TryOnRequest(**try_on_data))
+    
+    raise HTTPException(status_code=404, detail="Endpoint not found")
 
 if __name__ == "__main__":
     import uvicorn
