@@ -381,14 +381,25 @@ async def proxy_random_products(request: Request):
 @app.post("/api/vylist/try-on")
 async def proxy_try_on(request: Request, try_on_data: TryOnRequest):
     """Handle try-on requests through proxy"""
+    print("Try-on endpoint hit")
+    print("Request headers:", request.headers)
     shop = request.query_params.get("shop")
-    if not shop:
-        raise HTTPException(status_code=400, detail="Missing shop parameter")
-
+    print("Shop parameter:", shop)
+    
     try:
-        products = await get_shop_products(shop)
-        product = None
+        # Log the raw request body
+        body = await request.body()
+        print("Raw request body:", body)
         
+        if not shop:
+            print("Missing shop parameter")
+            raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+        print("Processing try-on request with data:", try_on_data)
+        products = await get_shop_products(shop)
+        print(f"Found {len(products)} products for shop")
+        
+        product = None
         for p in products:
             for variant in p['variants']:
                 if str(variant.get('id', '')) == try_on_data.variantId:
@@ -398,9 +409,10 @@ async def proxy_try_on(request: Request, try_on_data: TryOnRequest):
                 break
 
         if not product:
+            print(f"Product not found for variant ID: {try_on_data.variantId}")
             raise HTTPException(status_code=404, detail="Product not found")
 
-        return JSONResponse({
+        response_data = {
             "success": True,
             "tryOnImage": "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model1_a0d162fd-f701-4a06-9f57-0a4b8e339050_84cd7714-ea14-4035-ab59-b79df6119855_70ef1a20-ee23-4227-8b9a-a91920461693_4bf180dd-cc93-48de-897e-cddf0ebc01eb.png",
             "productDetails": {
@@ -409,40 +421,47 @@ async def proxy_try_on(request: Request, try_on_data: TryOnRequest):
                 "image": product['images'][0]['src'] if product['images'] else None,
                 "variant": next((v for v in product['variants'] if str(v.get('id', '')) == try_on_data.variantId), None)
             }
-        })
+        }
+        print("Sending response:", response_data)
+        return JSONResponse(response_data)
 
     except HTTPException as he:
+        print(f"HTTP Exception in try-on: {str(he)}")
         raise he
     except Exception as e:
         print(f"Error processing try-on request: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.api_route("/api/vylist/", methods=["GET", "POST"])
 async def proxy_handler(request: Request):
     """Handle all proxy requests"""
+    print("\n--- New proxy request ---")
+    print("Method:", request.method)
+    print("URL:", request.url)
+    print("Headers:", request.headers)
+    print("Query params:", request.query_params)
+    
     shop = request.query_params.get("shop")
     path_prefix = request.query_params.get("path_prefix")
     
     if not shop:
+        print("Missing shop parameter")
         return JSONResponse({"error": "Missing shop parameter"})
 
-    print(f"Received path_prefix: {path_prefix}")  # Debug log
+    print(f"Received path_prefix: {path_prefix}")
 
-    # Extract the actual endpoint from path_prefix
     if path_prefix:
-        # Remove '/apps/' from the beginning if it exists
-        endpoint = path_prefix.replace('/apps/vylist/', '')
-        print(f"Extracted endpoint: {endpoint}")  # Debug log
+        endpoint = path_prefix.replace('/apps/', '')
+        print(f"Extracted endpoint: {endpoint}")
 
-        # Route to appropriate handler based on endpoint
         if endpoint == 'random-products':
             return await proxy_random_products(request)
-        elif endpoint == 'try-on':
-            # For POST requests to try-on
+        elif endpoint == 'try-on' or endpoint == 'vylist/try-on':
             if request.method == "POST":
                 try_on_data = await request.json()
                 return await proxy_try_on(request, TryOnRequest(**try_on_data))
     
+    print("Endpoint not found")
     raise HTTPException(status_code=404, detail="Endpoint not found")
 
 if __name__ == "__main__":
