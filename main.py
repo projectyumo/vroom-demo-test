@@ -431,7 +431,7 @@ async def proxy_handler(request: Request):
     # Extract the actual endpoint from path_prefix
     if path_prefix:
         # Remove '/apps/' from the beginning if it exists
-        endpoint = path_prefix.replace('/apps/', '')
+        endpoint = path_prefix.replace('/apps/vylist/', '')
         print(f"Extracted endpoint: {endpoint}")  # Debug log
 
         # Route to appropriate handler based on endpoint
