@@ -8,7 +8,14 @@ from dotenv import load_dotenv, find_dotenv
 from db import init_db, store_access_token, get_access_token_for_shop, store_product, get_shop_products
 from urllib.parse import urlencode
 from fastapi import BackgroundTasks
+from pydantic import BaseModel
+from typing import Optional
 
+# Pydantic model to validate request data
+class TryOnRequest(BaseModel):
+    variantId: str
+    productId: Optional[str] = None
+        
 load_dotenv(find_dotenv())
 
 SHOPIFY_API_KEY = os.environ.get("SHOPIFY_API_KEY")
@@ -52,6 +59,48 @@ async def root(request: Request):
         "message": "App is installed and authorized",
         "shop": shop
     })
+
+@app.post("/try-on")
+async def try_on(request: Request, try_on_data: TryOnRequest):
+    """Handle try-on requests for products"""
+    shop = request.query_params.get("shop")
+    if not shop:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    try:
+        # Get product from database
+        products = await get_shop_products(shop)
+        product = None
+        
+        # Find the specific product with matching variant
+        for p in products:
+            for variant in p['variants']:
+                if str(variant.get('id', '')) == try_on_data.variantId:
+                    product = p
+                    break
+            if product:
+                break
+
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        # For now, just return a success response with the product details
+        return JSONResponse({
+            "success": True,
+            "tryOnImage": "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model1_a0d162fd-f701-4a06-9f57-0a4b8e339050_84cd7714-ea14-4035-ab59-b79df6119855_70ef1a20-ee23-4227-8b9a-a91920461693_4bf180dd-cc93-48de-897e-cddf0ebc01eb.png",
+            "productDetails": {
+                "id": product['product_id'],
+                "title": product['title'],
+                "image": product['images'][0]['src'] if product['images'] else None,
+                "variant": next((v for v in product['variants'] if str(v.get('id', '')) == try_on_data.variantId), None)
+            }
+        })
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error processing try-on request: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/install")
 async def install(request: Request):
