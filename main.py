@@ -415,7 +415,7 @@ async def proxy_try_on(request: Request, try_on_data: TryOnRequest):
         print(f"Error processing try-on request: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
         
-@app.get("/api/vylist/")
+@app.get("/api/vylist/", methods=["GET", "POST"])
 async def proxy_handler(request: Request):
     """Handle all proxy requests"""
     shop = request.query_params.get("shop")
