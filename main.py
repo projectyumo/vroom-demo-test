@@ -60,47 +60,6 @@ async def root(request: Request):
         "shop": shop
     })
 
-@app.post("/try-on")
-async def try_on(request: Request, try_on_data: TryOnRequest):
-    """Handle try-on requests for products"""
-    shop = request.query_params.get("shop")
-    if not shop:
-        raise HTTPException(status_code=400, detail="Missing shop parameter")
-
-    try:
-        # Get product from database
-        products = await get_shop_products(shop)
-        product = None
-        
-        # Find the specific product with matching variant
-        for p in products:
-            for variant in p['variants']:
-                if str(variant.get('id', '')) == try_on_data.variantId:
-                    product = p
-                    break
-            if product:
-                break
-
-        if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
-
-        # For now, just return a success response with the product details
-        return JSONResponse({
-            "success": True,
-            "tryOnImage": "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model1_a0d162fd-f701-4a06-9f57-0a4b8e339050_84cd7714-ea14-4035-ab59-b79df6119855_70ef1a20-ee23-4227-8b9a-a91920461693_4bf180dd-cc93-48de-897e-cddf0ebc01eb.png",
-            "productDetails": {
-                "id": product['product_id'],
-                "title": product['title'],
-                "image": product['images'][0]['src'] if product['images'] else None,
-                "variant": next((v for v in product['variants'] if str(v.get('id', '')) == try_on_data.variantId), None)
-            }
-        })
-
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        print(f"Error processing try-on request: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/install")
 async def install(request: Request):
@@ -370,55 +329,91 @@ async def check_ingestion_status(request: Request):
             "shop": shop
         })
     
-@app.get("/random-products")
-async def random_products(request: Request):
-    """Get random products from our local database"""
+@app.get("/api/vylist/random-products")
+async def proxy_random_products(request: Request):
+    """Get random products through proxy"""
     shop = request.query_params.get("shop")
     if not shop:
         return JSONResponse({"error": "Missing shop parameter"})
 
-    # Get products from local database
     try:
         products = await get_shop_products(shop)
-    except Exception as e:
-        print(f"Error fetching products from database: {str(e)}")
-        return JSONResponse({"error": "Failed to fetch products from database"})
-
-    if not products:
-        # If no products in database, try to refresh from Shopify
-        access_token = get_access_token_for_shop(shop)
-        if not access_token:
-            return JSONResponse({"error": "Shop not authorized"})
-            
-        try:
-            await ingest_products(shop, access_token)
-            products = await get_shop_products(shop)
-        except Exception as e:
-            print(f"Error refreshing products: {str(e)}")
-            return JSONResponse({"error": "Failed to refresh products"})
-
-    if not products:
-        return JSONResponse({"recommendations": []})
-    
-    # Select random products
-    pick_count = min(4, len(products))
-    chosen = random.sample(products, pick_count)
-
-    recommendations = []
-    for p in chosen:
-        images = p['images']  # Already parsed from JSON in get_shop_products
-        variants = p['variants']  # Already parsed from JSON in get_shop_products
-        handle = p['handle']
         
-        recommendations.append({
-            "title": p['title'],
-            "featuredImage": images[0]["src"] if images else "https://via.placeholder.com/400",
-            "price": f"${variants[0].get('price', '0.00')}" if variants else "$0.00",
-            "variantId": variants[0].get("id", "") if variants else "",
-            "onlineStoreUrl": f"/products/{handle}"
+        if not products:
+            access_token = get_access_token_for_shop(shop)
+            if not access_token:
+                return JSONResponse({"error": "Shop not authorized"})
+                
+            try:
+                await ingest_products(shop, access_token)
+                products = await get_shop_products(shop)
+            except Exception as e:
+                print(f"Error refreshing products: {str(e)}")
+                return JSONResponse({"error": "Failed to refresh products"})
+
+        if not products:
+            return JSONResponse({"recommendations": []})
+        
+        pick_count = min(4, len(products))
+        chosen = random.sample(products, pick_count)
+
+        recommendations = []
+        for p in chosen:
+            images = p['images']
+            variants = p['variants']
+            handle = p['handle']
+            
+            recommendations.append({
+                "title": p['title'],
+                "featuredImage": images[0]["src"] if images else "https://via.placeholder.com/400",
+                "price": f"${variants[0].get('price', '0.00')}" if variants else "$0.00",
+                "variantId": variants[0].get("id", "") if variants else "",
+                "onlineStoreUrl": f"/products/{handle}"
+            })
+        
+        return JSONResponse({"recommendations": recommendations})
+    except Exception as e:
+        print(f"Error in proxy random products: {str(e)}")
+        return JSONResponse({"error": "Failed to fetch products"})
+
+@app.post("/api/vylist/try-on")
+async def proxy_try_on(request: Request, try_on_data: TryOnRequest):
+    """Handle try-on requests through proxy"""
+    shop = request.query_params.get("shop")
+    if not shop:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    try:
+        products = await get_shop_products(shop)
+        product = None
+        
+        for p in products:
+            for variant in p['variants']:
+                if str(variant.get('id', '')) == try_on_data.variantId:
+                    product = p
+                    break
+            if product:
+                break
+
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        return JSONResponse({
+            "success": True,
+            "tryOnImage": "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model1_a0d162fd-f701-4a06-9f57-0a4b8e339050_84cd7714-ea14-4035-ab59-b79df6119855_70ef1a20-ee23-4227-8b9a-a91920461693_4bf180dd-cc93-48de-897e-cddf0ebc01eb.png",
+            "productDetails": {
+                "id": product['product_id'],
+                "title": product['title'],
+                "image": product['images'][0]['src'] if product['images'] else None,
+                "variant": next((v for v in product['variants'] if str(v.get('id', '')) == try_on_data.variantId), None)
+            }
         })
-    
-    return JSONResponse({"recommendations": recommendations})
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error processing try-on request: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     import uvicorn
