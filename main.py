@@ -432,36 +432,35 @@ async def proxy_try_on(request: Request, try_on_data: TryOnRequest):
         print(f"Error processing try-on request: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.api_route("/api/vylist/", methods=["GET", "POST"])
-async def proxy_handler(request: Request):
+@app.api_route("/api/vylist/{path:path}", methods=["GET", "POST"])
+async def proxy_handler(request: Request, path: str = ""):
     """Handle all proxy requests"""
-    print("\n--- New proxy request ---")
-    print("Method:", request.method)
-    print("URL:", request.url)
-    print("Headers:", request.headers)
-    print("Query params:", request.query_params)
+    print(f"\n=== Proxy Request ===")
+    print(f"Path: {path}")
+    print(f"Method: {request.method}")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Query params: {dict(request.query_params)}")
     
     shop = request.query_params.get("shop")
-    path_prefix = request.query_params.get("path_prefix")
-    
     if not shop:
         print("Missing shop parameter")
         return JSONResponse({"error": "Missing shop parameter"})
 
-    print(f"Received path_prefix: {path_prefix}")
-
-    if path_prefix:
-        endpoint = path_prefix.replace('/apps/', '')
-        print(f"Extracted endpoint: {endpoint}")
-
-        if endpoint == 'random-products':
-            return await proxy_random_products(request)
-        elif endpoint == 'try-on' or endpoint == 'vylist/try-on':
-            if request.method == "POST":
+    # Extract the endpoint from the path
+    if path.endswith("random-products"):
+        return await proxy_random_products(request)
+    elif path.endswith("try-on"):
+        if request.method == "POST":
+            try:
+                body = await request.body()
+                print(f"Request body: {body.decode()}")
                 try_on_data = await request.json()
                 return await proxy_try_on(request, TryOnRequest(**try_on_data))
+            except Exception as e:
+                print(f"Error processing try-on request: {str(e)}")
+                raise HTTPException(status_code=500, detail=str(e))
     
-    print("Endpoint not found")
+    print(f"No matching endpoint for path: {path}")
     raise HTTPException(status_code=404, detail="Endpoint not found")
 
 if __name__ == "__main__":
