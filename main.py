@@ -67,6 +67,7 @@ async def try_on(
     productId: Optional[str] = None
 ):
     """Handle try-on requests for products via GET with query params"""
+    print("TEST 2!!!!")
     shop = request.query_params.get("shop")
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
