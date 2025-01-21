@@ -61,8 +61,12 @@ async def root(request: Request):
     })
 
 @app.get("/try-on")
-async def try_on(request: Request, try_on_data: TryOnRequest):
-    """Handle try-on requests for products"""
+async def try_on(
+    request: Request,
+    variantId: str,
+    productId: Optional[str] = None
+):
+    """Handle try-on requests for products via GET with query params"""
     shop = request.query_params.get("shop")
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
@@ -75,7 +79,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
         # Find the specific product with matching variant
         for p in products:
             for variant in p['variants']:
-                if str(variant.get('id', '')) == try_on_data.variantId:
+                if str(variant.get('id', '')) == variantId:
                     product = p
                     break
             if product:
@@ -92,12 +96,10 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
                 "id": product['product_id'],
                 "title": product['title'],
                 "image": product['images'][0]['src'] if product['images'] else None,
-                "variant": next((v for v in product['variants'] if str(v.get('id', '')) == try_on_data.variantId), None)
+                "variant": next((v for v in product['variants'] if str(v.get('id', '')) == variantId), None)
             }
         })
 
-    except HTTPException as he:
-        raise he
     except Exception as e:
         print(f"Error processing try-on request: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -441,8 +443,12 @@ async def vylist(request: Request):
         if endpoint == 'random-products':
             return await random_products(request)
         elif endpoint == 'try-on':
-            # For POST requests to try-on
-            return await try_on(request, TryOnRequest(**try_on_data))
+            # Get variantId and productId from query params
+            variantId = request.query_params.get("variantId")
+            productId = request.query_params.get("productId")
+            if not variantId:
+                raise HTTPException(status_code=400, detail="Missing variantId parameter")
+            return await try_on(request, variantId=variantId, productId=productId)
     
     raise HTTPException(status_code=404, detail="Endpoint not found")
 
