@@ -168,6 +168,10 @@ async def fetch_all_products(shop: str, access_token: str) -> list:
 async def try_on(request: Request, try_on_data: TryOnRequest):
     """Handle try-on requests."""
     shop = request.query_params.get("shop")
+    customer_id = request.headers.get("X-Shopify-Customer-Id")
+    session_token = request.headers.get("X-Shopify-Session")
+    
+    print(f"Customer ID: {customer_id}, Session Token: {session_token}")
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
 
