@@ -60,7 +60,7 @@ async def root(request: Request):
         "shop": shop
     })
 
-@app.post("/try-on")
+@app.get("/try-on")
 async def try_on(request: Request, try_on_data: TryOnRequest):
     """Handle try-on requests for products"""
     shop = request.query_params.get("shop")
