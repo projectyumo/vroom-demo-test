@@ -242,7 +242,7 @@ async def vylist(request: Request):
     if path_prefix:
         # Remove '/apps/' from the beginning if it exists
         endpoint = path_prefix.replace('/apps/', '')
-
+        print("TEST!", endpoint)
         if endpoint == 'random-products':
             return await random_products(request)
         
