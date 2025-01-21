@@ -187,7 +187,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
 
         return JSONResponse({
             "success": True,
-            "tryOnImage": "https://via.placeholder.com/600x800?text=Try-On+Success",
+            "tryOnImage": "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model1_a0d162fd-f701-4a06-9f57-0a4b8e339050_84cd7714-ea14-4035-ab59-b79df6119855_70ef1a20-ee23-4227-8b9a-a91920461693_4bf180dd-cc93-48de-897e-cddf0ebc01eb.png",
             "productDetails": {
                 "id": product['product_id'],
                 "title": product['title'],
