@@ -442,9 +442,7 @@ async def vylist(request: Request):
             return await random_products(request)
         elif endpoint == 'try-on':
             # For POST requests to try-on
-            if request.method == "POST":
-                try_on_data = await request.json()
-                return await try_on(request, TryOnRequest(**try_on_data))
+            return await try_on(request, TryOnRequest(**try_on_data))
     
     raise HTTPException(status_code=404, detail="Endpoint not found")
 
