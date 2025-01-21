@@ -421,7 +421,7 @@ async def random_products(request: Request):
     return JSONResponse({"recommendations": recommendations})
 
 @app.get("/vylist")
-async def proxy_handler(request: Request):
+async def vylist(request: Request):
     """Handle all proxy requests"""
     shop = request.query_params.get("shop")
     path_prefix = request.query_params.get("path_prefix")
