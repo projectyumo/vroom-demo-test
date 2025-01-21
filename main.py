@@ -447,7 +447,9 @@ async def vylist(request: Request):
             print("TEST!!!!")
             try:
                 body = await request.json()
+                print("TEST!!!! {body}")
                 try_on_data = TryOnRequest(**body)
+                print("TEST!!!! {try_on_data}")
                 return await try_on(request, try_on_data)
             except Exception as e:
                 print(f"Error processing try-on request: {str(e)}")
