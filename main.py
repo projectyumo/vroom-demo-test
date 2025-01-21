@@ -422,7 +422,7 @@ async def random_products(request: Request):
     
     return JSONResponse({"recommendations": recommendations})
 
-@app.get("/vylist")
+@app.api_route("/vylist", methods=["GET", "POST"])
 async def vylist(request: Request):
     """Handle all proxy requests"""
     shop = request.query_params.get("shop")
@@ -443,12 +443,15 @@ async def vylist(request: Request):
         if endpoint == 'random-products':
             return await random_products(request)
         elif endpoint == 'try-on':
-            # Get variantId and productId from query params
-            variantId = request.query_params.get("variantId")
-            productId = request.query_params.get("productId")
-            if not variantId:
-                raise HTTPException(status_code=400, detail="Missing variantId parameter")
-            return await try_on(request, variantId=variantId, productId=productId)
+            # For POST requests to try-on
+            if request.method == "POST":
+                try:
+                    body = await request.json()
+                    try_on_data = TryOnRequest(**body)
+                    return await try_on(request, try_on_data)
+                except Exception as e:
+                    print(f"Error processing try-on request: {str(e)}")
+                    raise HTTPException(status_code=400, detail="Invalid request data")
     
     raise HTTPException(status_code=404, detail="Endpoint not found")
 
