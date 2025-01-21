@@ -445,15 +445,13 @@ async def vylist(request: Request):
             return await random_products(request)
         elif endpoint == 'try-on':
             print("TEST!!!!")
-            # For POST requests to try-on
-            if request.method == "POST":
-                try:
-                    body = await request.json()
-                    try_on_data = TryOnRequest(**body)
-                    return await try_on(request, try_on_data)
-                except Exception as e:
-                    print(f"Error processing try-on request: {str(e)}")
-                    raise HTTPException(status_code=400, detail="Invalid request data")
+            try:
+                body = await request.json()
+                try_on_data = TryOnRequest(**body)
+                return await try_on(request, try_on_data)
+            except Exception as e:
+                print(f"Error processing try-on request: {str(e)}")
+                raise HTTPException(status_code=400, detail="Invalid request data")
     
     raise HTTPException(status_code=404, detail="Endpoint not found")
 
