@@ -250,7 +250,7 @@ async def vylist(request: Request):
             # We expect a POST with JSON body: { "productId": "...", "variantId": "..." }
             try:
                 print("TEST!")
-                print(f"TEST! {request}")
+                print(f"TEST! {request.body()}")
                 body = await request.json()
                 print(f"TEST! {body}")
                 try_on_data = TryOnRequest(**body)  # Validate via Pydantic
