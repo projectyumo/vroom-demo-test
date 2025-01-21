@@ -443,6 +443,7 @@ async def vylist(request: Request):
         if endpoint == 'random-products':
             return await random_products(request)
         elif endpoint == 'try-on':
+            print("TEST!!!!")
             # For POST requests to try-on
             if request.method == "POST":
                 try:
