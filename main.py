@@ -1,8 +1,14 @@
 import os
 import random
 import httpx
+import json
+
+import firebase_admin
+from firebase_admin import credentials, db, firestore, storage
+
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse
+
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv, find_dotenv
 from db import init_db, store_access_token, get_access_token_for_shop, store_product, get_shop_products
@@ -15,6 +21,16 @@ load_dotenv(find_dotenv())
 SHOPIFY_API_KEY = os.environ.get("SHOPIFY_API_KEY")
 SHOPIFY_API_SECRET = os.environ.get("SHOPIFY_API_SECRET")
 APP_URL = os.environ.get("APP_URL")
+FIREBASE_ID = os.environ.get("FIREBASE_ID")
+FIREBASE_URL = os.environ.get("FIREBASE_URL")
+FIREBASE_CREDENTIALS = os.environ.get("FIREBASE_CREDENTIALS")
+
+cred = credentials.Certificate(json.loads(FIREBASE_CREDENTIALS))
+firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+bucket = storage.bucket(FIREBASE_URL) 
+blobs = list(bucket.list_blobs(prefix=f"{FIREBASE_ID}/tmp/", max_results=100))
 
 app = FastAPI()
 
@@ -191,10 +207,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
 
         return JSONResponse({
             "success": True,
-            "tryOnImage": random.choice(["https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model1_a0d162fd-f701-4a06-9f57-0a4b8e339050_84cd7714-ea14-4035-ab59-b79df6119855_70ef1a20-ee23-4227-8b9a-a91920461693_4bf180dd-cc93-48de-897e-cddf0ebc01eb.png",
-                                        "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model8_7843c51d-596b-481d-b843-1f88c196ab59_37a85c01-5cf6-4f6e-b4a3-ae986de36cf5_70ef1a20-ee23-4227-8b9a-a91920461693_4bf180dd-cc93-48de-897e-cddf0ebc01eb.png",
-                                        "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model1_dfc7946a-8bde-42b8-928c-dc4d4a093d3a_0af7370a-9632-4015-b985-32fd2289a1e5_0f3471c9-0cbb-47e1-80c4-102939891b4c.png",
-                                        "https://storage.googleapis.com/onlyfits-v4.appspot.com/9F2bxtw4VwSycrZyYBeHFvxlJVj2/tmp/outfit_Model8_b31cc383-7368-49b8-8dc5-79898e650132_007ed126-ee95-46fa-b0c9-bee0c8bdc3bc_77a364e4-4243-4d32-84c4-f3c190bb9cdd_36970983-d658-4636-b330-c8b1e40f7df5.png"]),
+            "tryOnImage": "https://storage.googleapis.com/onlyfits-v4.appspot.com/" + random.choice(blobs),
             "productDetails": {
                 "id": product['product_id'],
                 "title": product['title'],
