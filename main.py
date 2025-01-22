@@ -37,6 +37,7 @@ FIREBASE_CREDENTIALS = {
                           "universe_domain": os.environ.get("FIREBASE_UNIVERSE_DOMAIN")
                         }
 
+print(FIREBASE_CREDENTIALS)
 cred = credentials.Certificate(FIREBASE_CREDENTIALS)
 firebase_admin.initialize_app(cred)
 
