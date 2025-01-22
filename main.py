@@ -207,7 +207,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
 
         return JSONResponse({
             "success": True,
-            "tryOnImage": "https://storage.googleapis.com/onlyfits-v4.appspot.com/" + random.choice(blobs),
+            "tryOnImage": f"https://storage.googleapis.com/{FIREBASE_URL}/" + random.choice(blobs),
             "productDetails": {
                 "id": product['product_id'],
                 "title": product['title'],
