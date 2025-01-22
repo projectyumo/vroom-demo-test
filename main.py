@@ -220,7 +220,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
 
         return JSONResponse({
             "success": True,
-            "tryOnImage": f"https://storage.googleapis.com/{FIREBASE_URL}/" + random.choice(blobs),
+            "tryOnImage": f"https://storage.googleapis.com/{FIREBASE_URL}/" + random.choice(blobs).name,
             "productDetails": {
                 "id": product['product_id'],
                 "title": product['title'],
