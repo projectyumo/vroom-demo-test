@@ -37,11 +37,28 @@ FIREBASE_CREDENTIALS = {
                           "universe_domain": os.environ.get("FIREBASE_UNIVERSE_DOMAIN")
                         }
 
-print(FIREBASE_CREDENTIALS)
+# Define hats, tops, and bottoms
+
+PRODUCT_TYPE_MAP = {
+                    "baseball_hat": "headwear",
+                    "hoodie": "tops",
+                    "t_shirt": "tops",
+                    "sweater": "tops",
+                    "pants": "bottoms",
+                    "training_shorts": "bottoms",
+                    "big_shorts": "bottoms",
+                    "jordan_4": "shoes",
+                    "air_force_1_low": "shoes"
+                   }
+    
+# TODO: MOVE TO ENVIRONMENTAL VARIABLE
+PRODUCT_TYPE_MAP = json.load(open('./maps/product_type_map.json'))
 cred = credentials.Certificate(FIREBASE_CREDENTIALS)
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
+products_ref = products_ref = db.collection('products_v4')
+    
 bucket = storage.bucket(FIREBASE_URL) 
 blobs = list(bucket.list_blobs(prefix=f"{FIREBASE_ID}/tmp/", max_results=100))
 
@@ -197,8 +214,27 @@ async def fetch_all_products(shop: str, access_token: str) -> list:
 async def try_on(request: Request, try_on_data: TryOnRequest):
     """Handle try-on requests."""
     shop = request.query_params.get("shop")
+    product_handle = request.query_params.get("productHandle")
+    #TODO: current_outfit = request.query_params.get("currentOutfitUrl")
     customer_id = request.headers.get("X-Shopify-Customer-Id")
     session_token = request.headers.get("X-Shopify-Session")
+    
+    product_url = f"https://{shop}/products/{handle}.json"
+    # FIREBASE QUERY FOR PRODUCT JSON
+    docs = products_ref.where('main_product_url', '==', product_url).limit(2).stream()
+    doc = next(docs, None).to_dict()
+    product_id = doc['image_url'].split('/')[-1]
+    product_category = PRODUCT_TYPE_MAP[doc['product_type']]
+    
+    if product_category == "headwear":
+        pass
+    elif product_category == "tops":
+        pass
+    elif product_category == "bottoms":
+        pass
+    elif product_category == "shoes":
+        pass
+    
     
     print(f"Customer ID: {customer_id}, Session Token: {session_token}")
     if not shop:
