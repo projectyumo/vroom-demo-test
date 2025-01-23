@@ -214,12 +214,12 @@ async def fetch_all_products(shop: str, access_token: str) -> list:
 async def try_on(request: Request, try_on_data: TryOnRequest):
     """Handle try-on requests."""
     shop = request.query_params.get("shop")
-    product_handle = request.query_params.get("productHandle")
+    product_handle = try_on_data.product_handle
     #TODO: current_outfit = request.query_params.get("currentOutfitUrl")
     customer_id = request.headers.get("X-Shopify-Customer-Id")
     session_token = request.headers.get("X-Shopify-Session")
     
-    product_url = f"https://{shop}/products/{handle}.json"
+    product_url = f"https://{shop}/products/{product_handle}.json"
     # FIREBASE QUERY FOR PRODUCT JSON
     docs = products_ref.where('main_product_url', '==', product_url).limit(2).stream()
     doc = next(docs, None).to_dict()
