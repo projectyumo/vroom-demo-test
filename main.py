@@ -214,7 +214,7 @@ async def fetch_all_products(shop: str, access_token: str) -> list:
 async def try_on(request: Request, try_on_data: TryOnRequest):
     """Handle try-on requests."""
     shop = request.query_params.get("shop")
-    product_handle = try_on_data.product_handle
+    product_handle = try_on_data.productHandle
     #TODO: current_outfit = request.query_params.get("currentOutfitUrl")
     customer_id = request.headers.get("X-Shopify-Customer-Id")
     session_token = request.headers.get("X-Shopify-Session")
@@ -294,6 +294,7 @@ async def random_products(request: Request):
                 "featuredImage": images[0]["src"] if images else "https://via.placeholder.com/400",
                 "price": f"${variants[0].get('price', '0.00')}" if variants else "$0.00",
                 "variantId": variants[0].get("id", "") if variants else "",
+                "productHandle": variants[0].get("handle", "") if variants else "",
                 "id": p['product_id'],
                 "onlineStoreUrl": f"/products/{handle}"
             })
