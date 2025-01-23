@@ -51,8 +51,8 @@ PRODUCT_TYPE_MAP = {
                     "air_force_1_low": "shoes"
                    }
     
-# TODO: MOVE TO ENVIRONMENTAL VARIABLE
-PRODUCT_TYPE_MAP = json.load(open('./maps/product_type_map.json'))
+# # TODO: MOVE TO ENVIRONMENTAL VARIABLE
+# PRODUCT_TYPE_MAP = json.load(open('./maps/product_type_map.json'))
 cred = credentials.Certificate(FIREBASE_CREDENTIALS)
 firebase_admin.initialize_app(cred)
 
