@@ -236,7 +236,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     
     product_id = doc['image_url'].split('/')[-1]
     product_category = PRODUCT_TYPE_MAP[doc['product_type']]
-    print(product_url, product_id, product_category, currentOutfit)
+    print(product_url, product_id, product_category, current_outfit)
     if product_category == "headwear":
         current_outfit[-1] = product_id
     elif product_category == "tops":
@@ -270,7 +270,8 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
 
         return JSONResponse({
             "success": True,
-            "tryOnImage": f"https://storage.googleapis.com/{FIREBASE_URL}/" + random.choice(blobs).name,
+#             "tryOnImage": f"https://storage.googleapis.com/{FIREBASE_URL}/" + random.choice(blobs).name,
+            "tryOnImage": current_outfit,
             "productDetails": {
                 "id": product['product_id'],
                 "title": product['title'],
