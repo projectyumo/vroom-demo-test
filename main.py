@@ -222,6 +222,8 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     session_token = request.headers.get("X-Shopify-Session")
     
     product_url = f"https://{shop}/products/{product_handle}.json"
+    # TODO: Temporary modification
+    product_url = product_url.replace("vylist-test-store", "vylist")
     print(f"PRODUCT URL: {product_url}")
     
     # FIREBASE QUERY FOR PRODUCT JSON
