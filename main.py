@@ -83,6 +83,7 @@ class TryOnRequest(BaseModel):
     variantId: str
     productId: Optional[str] = None
     productHandle: str
+    modelImageUrl: str
 
 # Installation and auth endpoints
 @app.get("/")
@@ -217,6 +218,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     shop = request.query_params.get("shop")
 
     product_handle = try_on_data.productHandle
+    currentOutfit = try_on_data.modelImageUrl
     #TODO: current_outfit = request.query_params.get("currentOutfitUrl")
     customer_id = request.headers.get("X-Shopify-Customer-Id")
     session_token = request.headers.get("X-Shopify-Session")
@@ -224,13 +226,11 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     product_url = f"https://{shop}/products/{product_handle}.json"
     # TODO: Temporary modification
     product_url = product_url.replace("vylist-test-store", "vylist")
-    print(f"PRODUCT URL: {product_url}")
     
     # FIREBASE QUERY FOR PRODUCT JSON
     products_ref = db.collection('products_v4')
     docs = products_ref.where('main_product_url', '==', product_url).limit(2).stream()
     doc = next(docs, None).to_dict()
-    print("DOC", doc)
     
     product_id = doc['image_url'].split('/')[-1]
     product_category = PRODUCT_TYPE_MAP[doc['product_type']]
