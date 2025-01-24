@@ -57,7 +57,7 @@ cred = credentials.Certificate(FIREBASE_CREDENTIALS)
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
-products_ref = products_ref = db.collection('products_v4')
+products_ref = db.collection('products_v4')
     
 bucket = storage.bucket(FIREBASE_URL) 
 blobs = list(bucket.list_blobs(prefix=f"{FIREBASE_ID}/tmp/", max_results=100))
@@ -227,12 +227,11 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     print(f"PRODUCT URL: {product_url}")
     
     # FIREBASE QUERY FOR PRODUCT JSON
+    products_ref = db.collection('products_v4')
     docs = products_ref.where('main_product_url', '==', product_url).limit(2).stream()
-    find_doc = next(docs, None)
-    doc = None
-    if doc:
-        doc = find_doc.to_dict()
+    doc = next(docs, None).to_dict()
     print("DOC", doc)
+    
     product_id = doc['image_url'].split('/')[-1]
     product_category = PRODUCT_TYPE_MAP[doc['product_type']]
     print(product_url, product_id, product_category)
