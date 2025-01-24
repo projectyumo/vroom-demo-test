@@ -82,6 +82,7 @@ def on_startup():
 class TryOnRequest(BaseModel):
     variantId: str
     productId: Optional[str] = None
+    productHandle: str
 
 # Installation and auth endpoints
 @app.get("/")
@@ -225,7 +226,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     doc = next(docs, None).to_dict()
     product_id = doc['image_url'].split('/')[-1]
     product_category = PRODUCT_TYPE_MAP[doc['product_type']]
-    
+    print(product_url, product_id, product_category)
     if product_category == "headwear":
         pass
     elif product_category == "tops":
@@ -289,7 +290,7 @@ async def random_products(request: Request):
             images = p.get('images', [])
             variants = p.get('variants', [])
             handle = p.get('handle', '')
-            print("HANDLE:", handle)
+      
             recommendations.append({
                 "title": p['title'],
                 "featuredImage": images[0]["src"] if images else "https://via.placeholder.com/400",
