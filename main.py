@@ -294,7 +294,7 @@ async def random_products(request: Request):
                 "featuredImage": images[0]["src"] if images else "https://via.placeholder.com/400",
                 "price": f"${variants[0].get('price', '0.00')}" if variants else "$0.00",
                 "variantId": variants[0].get("id", "") if variants else "",
-                "productHandle": variants[0].get("handle", "") if variants else "",
+                "productHandle": handle,
                 "id": p['product_id'],
                 "onlineStoreUrl": f"/products/{handle}"
             })
