@@ -289,6 +289,7 @@ async def random_products(request: Request):
             images = p.get('images', [])
             variants = p.get('variants', [])
             handle = p.get('handle', '')
+            print("HANDLE:", handle)
             recommendations.append({
                 "title": p['title'],
                 "featuredImage": images[0]["src"] if images else "https://via.placeholder.com/400",
