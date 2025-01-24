@@ -226,7 +226,10 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     
     # FIREBASE QUERY FOR PRODUCT JSON
     docs = products_ref.where('main_product_url', '==', product_url).limit(2).stream()
-    doc = next(docs, None).to_dict()
+    find_doc = next(docs, None)
+    doc = None
+    if doc:
+        doc = find_doc.to_dict()
     product_id = doc['image_url'].split('/')[-1]
     product_category = PRODUCT_TYPE_MAP[doc['product_type']]
     print(product_url, product_id, product_category)
