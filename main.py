@@ -218,7 +218,9 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     shop = request.query_params.get("shop")
 
     product_handle = try_on_data.productHandle
-    currentOutfit = try_on_data.modelImageUrl
+    current_outfit = try_on_data.modelImageUrl.split('_')
+    print("CURRENT OUTFIT:", "_".join(current_outfit))
+
     #TODO: current_outfit = request.query_params.get("currentOutfitUrl")
     customer_id = request.headers.get("X-Shopify-Customer-Id")
     session_token = request.headers.get("X-Shopify-Session")
@@ -236,15 +238,18 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     product_category = PRODUCT_TYPE_MAP[doc['product_type']]
     print(product_url, product_id, product_category, currentOutfit)
     if product_category == "headwear":
-        pass
+        current_outfit[-1] = product_id
     elif product_category == "tops":
-        pass
-    elif product_category == "bottoms":
-        pass
+        current_outfit[-4] = product_id
+    elif product_category == "bottoms":     
+        current_outfit[-3] = product_id
     elif product_category == "shoes":
-        pass
-    
-    
+        current_outfit[-2] = product_id
+        
+    current_outfit = "_".join(current_outfit)
+
+    print("CURRENT OUTFIT:", current_outfit)
+        
     print(f"Customer ID: {customer_id}, Session Token: {session_token}")
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
