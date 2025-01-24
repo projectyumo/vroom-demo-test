@@ -230,6 +230,7 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     doc = None
     if doc:
         doc = find_doc.to_dict()
+    print("DOC", doc)
     product_id = doc['image_url'].split('/')[-1]
     product_category = PRODUCT_TYPE_MAP[doc['product_type']]
     print(product_url, product_id, product_category)
