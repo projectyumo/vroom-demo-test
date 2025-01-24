@@ -57,7 +57,6 @@ cred = credentials.Certificate(FIREBASE_CREDENTIALS)
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
-products_ref = db.collection('products_v4')
     
 bucket = storage.bucket(FIREBASE_URL) 
 blobs = list(bucket.list_blobs(prefix=f"{FIREBASE_ID}/tmp/", max_results=100))
@@ -217,6 +216,8 @@ async def try_on(request: Request, try_on_data: TryOnRequest):
     """Handle try-on requests."""
     shop = request.query_params.get("shop")
 
+    products_ref = db.collection(shop)
+    
     product_handle = try_on_data.productHandle
     current_outfit = try_on_data.modelImageUrl.split('_')
     print("CURRENT OUTFIT:", "_".join(current_outfit))
