@@ -163,6 +163,7 @@ async def background_fetch_products(shop: str, access_token: str):
     try:
         products = await fetch_all_products(shop, access_token)
         for product in products:
+            print(product)
             processed_product = {
                 "shop": shop,
                 "product_id": product.get("id"),
