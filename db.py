@@ -69,7 +69,7 @@ async def store_product(shop: str, product: Dict[str, Any]):
             published_at, status, variants, images, options, product_type, 
             tags
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         ) ON CONFLICT (shop, product_id) DO UPDATE SET
             title = EXCLUDED.title,
             handle = EXCLUDED.handle,
