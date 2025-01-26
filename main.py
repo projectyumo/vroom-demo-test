@@ -175,6 +175,7 @@ async def background_fetch_products(shop: str, access_token: str):
                 "variants": product.get("variants", []),
                 "images": product.get("images", []),
                 "options": product.get("options", []),
+                "product_type": product.get("product_type"),
                 "tags": product.get("tags")
             }
             await store_product(shop, processed_product)

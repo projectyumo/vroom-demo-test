@@ -38,6 +38,7 @@ def init_db():
         variants JSONB,
         images JSONB,
         options JSONB,
+        product_type TEXT,
         tags TEXT,
         PRIMARY KEY (shop, product_id)
     );
@@ -65,7 +66,8 @@ async def store_product(shop: str, product: Dict[str, Any]):
         upsert_sql = """
         INSERT INTO products (
             shop, product_id, title, handle, created_at, updated_at, 
-            published_at, status, variants, images, options, tags
+            published_at, status, variants, images, options, product_type, 
+            tags
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         ) ON CONFLICT (shop, product_id) DO UPDATE SET
@@ -78,6 +80,7 @@ async def store_product(shop: str, product: Dict[str, Any]):
             variants = EXCLUDED.variants,
             images = EXCLUDED.images,
             options = EXCLUDED.options,
+            product_type = EXCLUDED.product_type,
             tags = EXCLUDED.tags;
         """
         
@@ -93,6 +96,7 @@ async def store_product(shop: str, product: Dict[str, Any]):
             Json(product['variants']),  # Using psycopg2.extras.Json for proper JSON handling
             Json(product['images']),
             Json(product['options']),
+            product['product_type'],
             product['tags']
         ))
         
@@ -114,7 +118,8 @@ async def get_shop_products(shop: str) -> List[Dict[str, Any]]:
         cur.execute("""
             SELECT 
                 shop, product_id, title, handle, created_at, updated_at,
-                published_at, status, variants, images, options, tags
+                published_at, status, variants, images, options, product_type, 
+                tags
             FROM products 
             WHERE shop = %s
         """, (shop,))
